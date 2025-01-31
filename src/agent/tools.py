@@ -39,8 +39,8 @@ class MatchJobCandidatesInput(BaseModel):
 
 class SearchJobsTool(BaseTool):
     """Tool for searching job postings"""
-    name = "search_jobs"
-    description = "Search for job postings using semantic search. Input should be a description of the job you're looking for."
+    name: str = "search_jobs"
+    description: str = "Search for job postings using semantic search. Input should be a description of the job you're looking for."
     
     def __init__(self):
         super().__init__()
@@ -72,8 +72,8 @@ class SearchJobsTool(BaseTool):
 
 class SearchCandidatesTool(BaseTool):
     """Tool for searching candidate profiles"""
-    name = "search_candidates"
-    description = "Search for candidate profiles using semantic search. Input should be a description of the candidate you're looking for."
+    name: str = "search_candidates"
+    description: str = "Search for candidate profiles using semantic search. Input should be a description of the candidate you're looking for."
     
     def __init__(self):
         super().__init__()
@@ -105,8 +105,8 @@ class SearchCandidatesTool(BaseTool):
 
 class MatchJobCandidatesTool(BaseTool):
     """Tool for matching jobs with candidates"""
-    name = "match_job_candidates"
-    description = "Match a job posting with potential candidates or vice versa. Input should be a job ID or resume ID."
+    name: str = "match_job_candidates"
+    description: str = "Match a job posting with potential candidates or vice versa. Input should be a job ID or resume ID."
     
     def __init__(self):
         super().__init__()

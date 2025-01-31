@@ -3,9 +3,10 @@ from pathlib import Path
 import json
 import faiss
 import numpy as np
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.docstore import InMemoryDocstore
-from langchain.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.docstore import InMemoryDocstore
+from langchain_community.vectorstores import FAISS
+import os
 
 from src.core.config import settings
 from src.core.logging import setup_logger
@@ -19,8 +20,8 @@ class EmbeddingManager:
     """Manager for creating and managing embeddings"""
     
     def __init__(self):
+        os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
         self.embeddings = OpenAIEmbeddings(
-            openai_api_key=settings.OPENAI_API_KEY,
             model=settings.EMBEDDING_MODEL
         )
         self.data_dir = settings.DATA_DIR
@@ -65,9 +66,14 @@ class EmbeddingManager:
         Remote Preference: {'Yes' if candidate.remote_preference else 'No'}
         """
         
-    def create_job_embeddings(self) -> FAISS:
+    def create_job_embeddings(self, force: bool = False) -> FAISS:
         """Create embeddings for job postings"""
         try:
+            index_path = self.index_dir / "jobs_index"
+            if not force and index_path.exists():
+                logger.info("Job embeddings already exist. Use force=True to recreate.")
+                return self.load_embeddings("jobs")
+            
             # Load processed job data
             with open(self.data_dir / "processed/structured_jobs.json", "r") as f:
                 jobs_data = json.load(f)
@@ -84,7 +90,7 @@ class EmbeddingManager:
             )
             
             # Save index
-            vectorstore.save_local(str(self.index_dir / "jobs_index"))
+            vectorstore.save_local(str(index_path))
             logger.info(f"Successfully created embeddings for {len(jobs)} job postings")
             return vectorstore
             
@@ -92,9 +98,14 @@ class EmbeddingManager:
             logger.error(f"Error creating job embeddings: {str(e)}")
             raise EmbeddingError(f"Failed to create job embeddings: {str(e)}")
             
-    def create_candidate_embeddings(self) -> FAISS:
+    def create_candidate_embeddings(self, force: bool = False) -> FAISS:
         """Create embeddings for candidate profiles"""
         try:
+            index_path = self.index_dir / "candidates_index"
+            if not force and index_path.exists():
+                logger.info("Candidate embeddings already exist. Use force=True to recreate.")
+                return self.load_embeddings("candidates")
+            
             # Load processed candidate data
             with open(self.data_dir / "processed/structured_candidates.json", "r") as f:
                 candidates_data = json.load(f)
@@ -111,7 +122,7 @@ class EmbeddingManager:
             )
             
             # Save index
-            vectorstore.save_local(str(self.index_dir / "candidates_index"))
+            vectorstore.save_local(str(index_path))
             logger.info(f"Successfully created embeddings for {len(candidates)} candidate profiles")
             return vectorstore
             

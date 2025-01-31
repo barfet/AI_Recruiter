@@ -1,12 +1,12 @@
 from typing import List, Dict, Any
+from langchain_community.chat_models import ChatOpenAI
 from langchain.agents import AgentExecutor, ConversationalChatAgent
 from langchain.memory import ConversationBufferMemory
-from langchain.chat_models import ChatOpenAI
 from langchain.tools import BaseTool
 
 from src.core.logging import setup_logger
 from src.agent.tools import SearchJobsTool, SearchCandidatesTool, MatchJobCandidatesTool
-from src.core.config import OPENAI_MODEL
+from src.core.config import settings
 
 logger = setup_logger(__name__)
 
@@ -22,7 +22,7 @@ class RecruitingAgent:
         ]
         
         self.llm = ChatOpenAI(
-            model=OPENAI_MODEL,
+            model=settings.LLM_MODEL,
             temperature=temperature
         )
         
