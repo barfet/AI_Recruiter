@@ -1,35 +1,36 @@
-from typing import List, Dict, Any
 from pathlib import Path
+import logging
+from typing import List, Dict, Any
 
+from src.core.config import settings
 from src.core.logging import setup_logger
-from src.core.exceptions import DataIngestionError
-from src.data.managers.job_manager import JobManager
-from src.data.managers.candidate_manager import CandidateManager
+from src.data.managers.job import JobManager
+from src.data.managers.candidate import CandidateManager
 from src.data import init_data_directories
 
 logger = setup_logger(__name__)
 
-def ingest_data() -> None:
-    """Main function to ingest and process all data"""
+def process_data() -> None:
+    """Process job postings and candidate resumes"""
     try:
         # Initialize data directories
         init_data_directories()
         
-        # Process job data
-        logger.info("Processing job data...")
+        # Process job postings
+        logger.info("Processing job postings...")
         job_manager = JobManager()
-        processed_jobs = job_manager.load_and_process_jobs()
-        logger.info(f"Successfully processed {len(processed_jobs)} job postings")
+        jobs = job_manager.process_jobs()
+        logger.info(f"Successfully processed {len(jobs)} job postings")
         
-        # Process candidate data
-        logger.info("Processing candidate data...")
+        # Process candidate resumes
+        logger.info("Processing candidate resumes...")
         candidate_manager = CandidateManager()
-        processed_candidates = candidate_manager.load_and_process_candidates()
-        logger.info(f"Successfully processed {len(processed_candidates)} candidate profiles")
+        candidates = candidate_manager.process_candidates()
+        logger.info(f"Successfully processed {len(candidates)} candidate profiles")
         
     except Exception as e:
-        logger.error(f"Error during data ingestion: {str(e)}")
-        raise DataIngestionError(f"Data ingestion failed: {str(e)}")
-        
+        logger.error(f"Error during data processing: {str(e)}")
+        raise
+
 if __name__ == "__main__":
-    ingest_data() 
+    process_data() 

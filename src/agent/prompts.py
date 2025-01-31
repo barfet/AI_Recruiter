@@ -37,12 +37,59 @@ Thought: Consider the next step
 
 Begin!"""
 
-class AgentPromptTemplate(StringPromptTemplate, BaseModel):
-    """Template for the agent's prompts"""
+class AgentPromptTemplate(StringPromptTemplate):
+    """Template for agent prompts"""
     
-    tools: List[str] = Field(default_factory=list)
+    def __init__(self, tools: List[str]):
+        super().__init__(template="", input_variables=["input", "chat_history", "intermediate_steps"])
+        self.tools = tools
     
     def format(self, **kwargs) -> str:
-        """Format the prompt template"""
-        tools_str = "\n".join(f"- {tool}" for tool in self.tools)
-        return SYSTEM_TEMPLATE.format(tools=tools_str) 
+        # Get the intermediate steps (AgentAction, Observation tuples)
+        intermediate_steps = kwargs.pop("intermediate_steps")
+        chat_history = kwargs.get("chat_history", [])
+        
+        # Format chat history
+        history = ""
+        for message in chat_history:
+            if message.type == "human":
+                history += f"\nHuman: {message.content}"
+            else:
+                history += f"\nAssistant: {message.content}"
+        
+        # Format intermediate steps
+        thoughts = ""
+        for action, observation in intermediate_steps:
+            thoughts += f"\nAction: {action}\nObservation: {observation}\n"
+        
+        # Base template
+        template = """You are an AI recruiter assistant. Your goal is to help match candidates with jobs and provide insights.
+
+Previous conversation:
+{history}
+
+Previous actions and observations:
+{thoughts}
+
+Current task: {input}
+
+Available tools:
+{tools}
+
+Think through what you need to do step by step. Then use the appropriate tool.
+Response should be in this format:
+Thought: your thought process
+Action: tool name
+Action Input: input for the tool
+
+or, if you have a final answer:
+Thought: your thought process
+Final Answer: your final response"""
+        
+        # Fill in the template
+        return template.format(
+            history=history,
+            thoughts=thoughts,
+            input=kwargs["input"],
+            tools="\n".join(self.tools)
+        ) 

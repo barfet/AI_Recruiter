@@ -3,7 +3,7 @@ from pathlib import Path
 import json
 from pydantic import BaseModel
 
-from src.core.config import PROCESSED_DATA_DIR, JOB_POSTINGS_DIR, RESUME_DIR
+from src.core.config import settings
 from src.core.logging import setup_logger
 from src.core.exceptions import DataIngestionError
 
@@ -15,7 +15,7 @@ class BaseManager:
     
     def __init__(self, model: Type[T]):
         self.model = model
-        self.processed_data_dir = PROCESSED_DATA_DIR
+        self.processed_data_dir = settings.PROCESSED_DATA_DIR
         self.raw_data_dir = settings.RAW_DATA_DIR
         
     def save_processed_data(self, data: List[T], filename: str) -> None:

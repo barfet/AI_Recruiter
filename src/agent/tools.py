@@ -1,9 +1,12 @@
 from typing import Dict, List, Any, Optional
 from pydantic import BaseModel, Field
 from langchain.tools import BaseTool
+import json
 
 from src.core.logging import setup_logger
 from src.search.search_manager import SearchManager
+from src.embeddings.manager import EmbeddingManager
+from src.core.exceptions import EmbeddingError
 
 logger = setup_logger(__name__)
 
@@ -36,126 +39,143 @@ class MatchJobCandidatesInput(BaseModel):
 
 class SearchJobsTool(BaseTool):
     """Tool for searching job postings"""
-    
     name = "search_jobs"
-    description = "Search for job postings based on a query"
-    args_schema = SearchJobsInput
+    description = "Search for job postings using semantic search. Input should be a description of the job you're looking for."
     
     def __init__(self):
         super().__init__()
-        self.search_manager = SearchManager()
-        
-    def _run(self, query: str, k: int = 5, filters: Optional[Dict[str, Any]] = None) -> str:
-        """Run the tool"""
+        self.embedding_manager = EmbeddingManager()
+        self.vectorstore = self.embedding_manager.load_embeddings("jobs")
+    
+    def _run(self, query: str) -> str:
+        """Run job search"""
         try:
-            results = self.search_manager.search_jobs(query, k=k, filters=filters)
-            return self._format_job_results(results)
+            results = self.embedding_manager.similarity_search(
+                self.vectorstore,
+                query,
+                k=5
+            )
+            return json.dumps([{
+                'job_id': r['metadata']['job_id'],
+                'title': r['metadata']['title'],
+                'company': r['metadata']['company'],
+                'location': r['metadata']['location'],
+                'score': r['score']
+            } for r in results], indent=2)
         except Exception as e:
-            logger.error(f"Error in SearchJobsTool: {str(e)}")
-            return f"Error searching jobs: {str(e)}"
-            
-    def _format_job_results(self, results: List[Dict[str, Any]]) -> str:
-        """Format job search results"""
-        if not results:
-            return "No matching jobs found."
-            
-        formatted_results = []
-        for result in results:
-            metadata = result["metadata"]
-            formatted_job = f"""
-            Job ID: {metadata['job_id']}
-            Title: {metadata['title']}
-            Company: {metadata['company']}
-            Location: {metadata['location']}
-            Skills: {', '.join(metadata['skills'])}
-            Experience Level: {metadata['experience_level'] or 'Not specified'}
-            Remote: {'Yes' if metadata['remote_allowed'] else 'No'}
-            Similarity Score: {result['score']:.2f}
-            """
-            formatted_results.append(formatted_job)
-            
-        return "\n".join(formatted_results)
+            logger.error(f"Error searching jobs: {str(e)}")
+            return f"Error: {str(e)}"
+    
+    async def _arun(self, query: str) -> str:
+        """Async implementation"""
+        return self._run(query)
 
 class SearchCandidatesTool(BaseTool):
     """Tool for searching candidate profiles"""
-    
     name = "search_candidates"
-    description = "Search for candidates based on a query"
-    args_schema = SearchCandidatesInput
+    description = "Search for candidate profiles using semantic search. Input should be a description of the candidate you're looking for."
     
     def __init__(self):
         super().__init__()
-        self.search_manager = SearchManager()
-        
-    def _run(self, query: str, k: int = 5, filters: Optional[Dict[str, Any]] = None) -> str:
-        """Run the tool"""
+        self.embedding_manager = EmbeddingManager()
+        self.vectorstore = self.embedding_manager.load_embeddings("candidates")
+    
+    def _run(self, query: str) -> str:
+        """Run candidate search"""
         try:
-            results = self.search_manager.search_candidates(query, k=k, filters=filters)
-            return self._format_candidate_results(results)
+            results = self.embedding_manager.similarity_search(
+                self.vectorstore,
+                query,
+                k=5
+            )
+            return json.dumps([{
+                'resume_id': r['metadata']['resume_id'],
+                'name': r['metadata'].get('name', 'Anonymous'),
+                'industry': r['metadata']['industry'],
+                'skills': r['metadata'].get('skills', []),
+                'score': r['score']
+            } for r in results], indent=2)
         except Exception as e:
-            logger.error(f"Error in SearchCandidatesTool: {str(e)}")
-            return f"Error searching candidates: {str(e)}"
-            
-    def _format_candidate_results(self, results: List[Dict[str, Any]]) -> str:
-        """Format candidate search results"""
-        if not results:
-            return "No matching candidates found."
-            
-        formatted_results = []
-        for result in results:
-            metadata = result["metadata"]
-            formatted_candidate = f"""
-            Candidate ID: {metadata['candidate_id']}
-            Name: {metadata['name']}
-            Location: {metadata['location'] or 'Not specified'}
-            Skills: {', '.join(metadata['skills'])}
-            Experience: {len(metadata['experience'])} positions
-            Education: {len(metadata['education'])} degrees
-            Languages: {', '.join(metadata['languages'])}
-            Desired Role: {metadata['desired_role'] or 'Not specified'}
-            Similarity Score: {result['score']:.2f}
-            """
-            formatted_results.append(formatted_candidate)
-            
-        return "\n".join(formatted_results)
+            logger.error(f"Error searching candidates: {str(e)}")
+            return f"Error: {str(e)}"
+    
+    async def _arun(self, query: str) -> str:
+        """Async implementation"""
+        return self._run(query)
 
 class MatchJobCandidatesTool(BaseTool):
-    """Tool for matching candidates to a specific job"""
-    
+    """Tool for matching jobs with candidates"""
     name = "match_job_candidates"
-    description = "Find candidates that match a specific job posting"
-    args_schema = MatchJobCandidatesInput
+    description = "Match a job posting with potential candidates or vice versa. Input should be a job ID or resume ID."
     
     def __init__(self):
         super().__init__()
-        self.search_manager = SearchManager()
-        
-    def _run(self, job_id: str, k: int = 5, filters: Optional[Dict[str, Any]] = None) -> str:
-        """Run the tool"""
+        self.embedding_manager = EmbeddingManager()
+        self.jobs_store = self.embedding_manager.load_embeddings("jobs")
+        self.candidates_store = self.embedding_manager.load_embeddings("candidates")
+    
+    def _run(self, query: str) -> str:
+        """Run matching"""
         try:
-            results = self.search_manager.match_job_candidates(job_id, k=k, filters=filters)
-            return self._format_match_results(results)
+            # Parse input to determine if it's a job ID or resume ID
+            input_type = "job" if query.startswith("job_") else "resume"
+            
+            if input_type == "job":
+                # Find candidates for a job
+                job_id = query
+                job = next((j for j in self.jobs_store if j['metadata']['job_id'] == job_id), None)
+                if not job:
+                    return f"Job {job_id} not found"
+                
+                # Use job description to find matching candidates
+                results = self.embedding_manager.similarity_search(
+                    self.candidates_store,
+                    job['document'],
+                    k=5
+                )
+                return json.dumps({
+                    'job': {
+                        'job_id': job_id,
+                        'title': job['metadata']['title'],
+                        'company': job['metadata']['company']
+                    },
+                    'matching_candidates': [{
+                        'resume_id': r['metadata']['resume_id'],
+                        'name': r['metadata'].get('name', 'Anonymous'),
+                        'skills': r['metadata'].get('skills', []),
+                        'score': r['score']
+                    } for r in results]
+                }, indent=2)
+            else:
+                # Find jobs for a candidate
+                resume_id = query
+                candidate = next((c for c in self.candidates_store if c['metadata']['resume_id'] == resume_id), None)
+                if not candidate:
+                    return f"Candidate {resume_id} not found"
+                
+                # Use candidate profile to find matching jobs
+                results = self.embedding_manager.similarity_search(
+                    self.jobs_store,
+                    candidate['document'],
+                    k=5
+                )
+                return json.dumps({
+                    'candidate': {
+                        'resume_id': resume_id,
+                        'name': candidate['metadata'].get('name', 'Anonymous'),
+                        'skills': candidate['metadata'].get('skills', [])
+                    },
+                    'matching_jobs': [{
+                        'job_id': r['metadata']['job_id'],
+                        'title': r['metadata']['title'],
+                        'company': r['metadata']['company'],
+                        'score': r['score']
+                    } for r in results]
+                }, indent=2)
         except Exception as e:
-            logger.error(f"Error in MatchJobCandidatesTool: {str(e)}")
-            return f"Error matching candidates: {str(e)}"
-            
-    def _format_match_results(self, results: List[Dict[str, Any]]) -> str:
-        """Format match results"""
-        if not results:
-            return "No matching candidates found."
-            
-        formatted_results = []
-        for result in results:
-            metadata = result["metadata"]
-            formatted_match = f"""
-            Candidate ID: {metadata['candidate_id']}
-            Name: {metadata['name']}
-            Location: {metadata['location'] or 'Not specified'}
-            Skills: {', '.join(metadata['skills'])}
-            Experience: {len(metadata['experience'])} positions
-            Education: {len(metadata['education'])} degrees
-            Match Score: {result['score']:.2f}
-            """
-            formatted_results.append(formatted_match)
-            
-        return "\n".join(formatted_results) 
+            logger.error(f"Error matching: {str(e)}")
+            return f"Error: {str(e)}"
+    
+    async def _arun(self, query: str) -> str:
+        """Async implementation"""
+        return self._run(query) 
