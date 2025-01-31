@@ -57,31 +57,40 @@ def test_job_search():
             logger.error(f"Error testing job search: {str(e)}")
 
 def test_candidate_search():
-    """Test semantic search for candidates"""
-    manager = EmbeddingManager()
-    vectorstore = manager.load_embeddings("candidates")
-    if not vectorstore:
-        logger.error("No candidate embeddings found. Please create embeddings first.")
-        return
+    """Test candidate search functionality"""
+    logger.info("Testing candidate search functionality...")
     
-    # Test queries covering different profiles
+    # Initialize embedding manager
+    embedding_manager = EmbeddingManager()
+    vectorstore = embedding_manager.load_embeddings("candidates")
+    
+    # Test queries
     test_queries = [
         "Experienced software architect with cloud expertise",
         "Fresh graduate in computer science",
         "Full stack developer with React and Node.js",
         "Data engineer with big data experience",
-        "Technical lead with team management skills",
+        "Technical lead with team management skills"
     ]
     
-    logger.info("Testing candidate search functionality...")
     for query in test_queries:
         logger.info(f"\nQuery: {query}")
-        try:
-            results = manager.similarity_search(vectorstore, query, k=3)
-            for result in results:
-                print(format_candidate_result(result))
-        except Exception as e:
-            logger.error(f"Error testing candidate search: {str(e)}")
+        results = embedding_manager.similarity_search(vectorstore, query)
+        
+        for result in results:
+            metadata = result["metadata"]
+            score = 1 - (result["score"] / 2)  # Normalize score to 0-1 range
+            
+            logger.info(f"""
+    Resume ID: {metadata['resume_id']}
+    Name: {metadata.get('name', 'Anonymous')}
+    Industry: {metadata.get('industry', 'Not specified')}
+    Skills: {', '.join(metadata.get('skills', []))}
+    Location: {metadata.get('location', 'Not specified')}
+    Experience: {len(metadata.get('experience', []))} roles
+    Education: {len(metadata.get('education', []))} degrees
+    Match Score: {score:.2f}
+    """)
 
 def test_cross_matching():
     """Test matching between jobs and candidates"""

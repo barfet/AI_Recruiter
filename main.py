@@ -38,7 +38,8 @@ def process_data(
 @app.command()
 def create_embeddings(
     data_type: str = typer.Option(..., help="Type of data to create embeddings for (jobs/candidates)"),
-    force: bool = typer.Option(False, help="Force recreation of embeddings")
+    force: bool = typer.Option(False, help="Force recreation of embeddings"),
+    batch_size: int = typer.Option(50, help="Number of items to process in each batch")
 ):
     """Create embeddings for processed data"""
     try:
@@ -46,9 +47,9 @@ def create_embeddings(
         embedding_manager = EmbeddingManager()
         
         if data_type == "jobs":
-            embedding_manager.create_job_embeddings(force=force)
+            embedding_manager.create_job_embeddings(force=force, batch_size=batch_size)
         elif data_type == "candidates":
-            embedding_manager.create_candidate_embeddings(force=force)
+            embedding_manager.create_candidate_embeddings(force=force, batch_size=batch_size)
         else:
             logger.error(f"Invalid data type: {data_type}")
             raise typer.Exit(1)

@@ -3,9 +3,10 @@ from pathlib import Path
 import json
 import faiss
 import numpy as np
-from langchain_openai import OpenAIEmbeddings
+from sentence_transformers import SentenceTransformer
 from langchain_community.docstore import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
+from langchain_core.embeddings import Embeddings
 import os
 
 from src.core.config import settings
@@ -16,14 +17,26 @@ from src.data.models.candidate import CandidateProfile
 
 logger = setup_logger(__name__)
 
+class LocalEmbeddings(Embeddings):
+    """Local embeddings using Sentence Transformers"""
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+        self.model = SentenceTransformer(model_name)
+    
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """Embed a list of texts"""
+        embeddings = self.model.encode(texts, convert_to_numpy=True)
+        return embeddings.tolist()
+    
+    def embed_query(self, text: str) -> List[float]:
+        """Embed a single text"""
+        embedding = self.model.encode([text], convert_to_numpy=True)[0]
+        return embedding.tolist()
+
 class EmbeddingManager:
     """Manager for creating and managing embeddings"""
     
     def __init__(self):
-        os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
-        self.embeddings = OpenAIEmbeddings(
-            model=settings.EMBEDDING_MODEL
-        )
+        self.embeddings = LocalEmbeddings()
         self.data_dir = settings.DATA_DIR
         self.index_dir = settings.INDEXES_DIR
         
@@ -49,7 +62,7 @@ class EmbeddingManager:
         ])
         
         education_text = "\n".join([
-            f"- {edu.degree} in {edu.field_of_study} from {edu.institution}"
+            f"- {edu.degree} from {edu.institution}"
             for edu in candidate.education
         ])
         
@@ -61,12 +74,14 @@ class EmbeddingManager:
         Experience:\n{experience_text}
         Education:\n{education_text}
         Languages: {', '.join(candidate.languages)}
+        Industry: {candidate.industry}
+        Certifications: {', '.join(candidate.certifications)}
         Desired Role: {candidate.desired_role or 'Not specified'}
         Desired Location: {candidate.desired_location or 'Not specified'}
         Remote Preference: {'Yes' if candidate.remote_preference else 'No'}
         """
         
-    def create_job_embeddings(self, force: bool = False) -> FAISS:
+    def create_job_embeddings(self, force: bool = False, batch_size: int = 50) -> FAISS:
         """Create embeddings for job postings"""
         try:
             index_path = self.index_dir / "jobs_index"
@@ -79,15 +94,25 @@ class EmbeddingManager:
                 jobs_data = json.load(f)
             
             jobs = [JobPosting(**job) for job in jobs_data]
-            texts = [self._prepare_job_text(job) for job in jobs]
-            metadatas = [job.dict() for job in jobs]
+            vectorstore = None
             
-            # Create FAISS index
-            vectorstore = FAISS.from_texts(
-                texts=texts,
-                embedding=self.embeddings,
-                metadatas=metadatas
-            )
+            # Process in batches
+            for i in range(0, len(jobs), batch_size):
+                batch = jobs[i:i + batch_size]
+                texts = [self._prepare_job_text(job) for job in batch]
+                metadatas = [job.dict() for job in batch]
+                
+                # Create or merge FAISS index
+                if vectorstore is None:
+                    vectorstore = FAISS.from_texts(
+                        texts=texts,
+                        embedding=self.embeddings,
+                        metadatas=metadatas
+                    )
+                else:
+                    vectorstore.add_texts(texts=texts, metadatas=metadatas)
+                
+                logger.info(f"Processed batch {i//batch_size + 1} ({i+len(batch)}/{len(jobs)} jobs)")
             
             # Save index
             vectorstore.save_local(str(index_path))
@@ -98,7 +123,7 @@ class EmbeddingManager:
             logger.error(f"Error creating job embeddings: {str(e)}")
             raise EmbeddingError(f"Failed to create job embeddings: {str(e)}")
             
-    def create_candidate_embeddings(self, force: bool = False) -> FAISS:
+    def create_candidate_embeddings(self, force: bool = False, batch_size: int = 50) -> FAISS:
         """Create embeddings for candidate profiles"""
         try:
             index_path = self.index_dir / "candidates_index"
@@ -111,15 +136,25 @@ class EmbeddingManager:
                 candidates_data = json.load(f)
             
             candidates = [CandidateProfile(**candidate) for candidate in candidates_data]
-            texts = [self._prepare_candidate_text(candidate) for candidate in candidates]
-            metadatas = [candidate.dict() for candidate in candidates]
+            vectorstore = None
             
-            # Create FAISS index
-            vectorstore = FAISS.from_texts(
-                texts=texts,
-                embedding=self.embeddings,
-                metadatas=metadatas
-            )
+            # Process in batches
+            for i in range(0, len(candidates), batch_size):
+                batch = candidates[i:i + batch_size]
+                texts = [self._prepare_candidate_text(candidate) for candidate in batch]
+                metadatas = [candidate.dict() for candidate in batch]
+                
+                # Create or merge FAISS index
+                if vectorstore is None:
+                    vectorstore = FAISS.from_texts(
+                        texts=texts,
+                        embedding=self.embeddings,
+                        metadatas=metadatas
+                    )
+                else:
+                    vectorstore.add_texts(texts=texts, metadatas=metadatas)
+                
+                logger.info(f"Processed batch {i//batch_size + 1} ({i+len(batch)}/{len(candidates)} candidates)")
             
             # Save index
             vectorstore.save_local(str(index_path))
@@ -140,7 +175,8 @@ class EmbeddingManager:
                 
             vectorstore = FAISS.load_local(
                 str(index_path),
-                self.embeddings
+                self.embeddings,
+                allow_dangerous_deserialization=True  # Safe since we created these files
             )
             logger.info(f"Successfully loaded {index_name} embeddings")
             return vectorstore
