@@ -1,0 +1,57 @@
+[flake8]
+max-line-length = 100
+max-complexity = 10
+exclude =
+    .git,
+    __pycache__,
+    build,
+    dist,
+    *.pyc,
+    *.egg-info,
+    .eggs,
+    .tox,
+    .venv,
+    venv
+
+# Core issues that should never be ignored
+select =
+    # PyFlakes errors (F)
+    F,
+    # pycodestyle errors (E)
+    E,
+    # pycodestyle warnings (W)
+    W,
+    # McCabe complexity (C901)
+    C901
+
+# Specific ignores with justification
+ignore =
+    # Allow line break before binary operator (black formatter style)
+    W503,
+    # Allow line break after binary operator
+    W504,
+    # Allow blank line contains whitespace (will fix in cleanup)
+    W293,
+    # Allow missing docstring in public module (temporary)
+    D100,
+    # Allow missing docstring in public class (temporary)
+    D101,
+    # Allow missing docstring in public method (temporary)
+    D102
+
+# Per-file ignores for legacy code
+# New code should not need these ignores
+per-file-ignores =
+    # Allow unused imports in __init__.py files
+    __init__.py:F401,
+    # Legacy files with formatting issues (to be fixed)
+    src/data/cleaning/*.py:W291,W292,
+    src/utils/*.py:W291,W292
+
+# Additional settings
+# Print total number of errors
+count = True
+# Print statistics about errors
+statistics = True
+# Show source code for each error
+show_source = True

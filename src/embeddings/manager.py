@@ -1,13 +1,8 @@
 from typing import List, Dict, Any, Optional
-from pathlib import Path
 import json
-import faiss
-import numpy as np
 from sentence_transformers import SentenceTransformer
-from langchain_community.docstore import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
 from langchain_core.embeddings import Embeddings
-import os
 
 from src.core.config import settings
 from src.core.logging import setup_logger
@@ -17,29 +12,32 @@ from src.data.models.candidate import CandidateProfile
 
 logger = setup_logger(__name__)
 
+
 class LocalEmbeddings(Embeddings):
     """Local embeddings using Sentence Transformers"""
+
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
         self.model = SentenceTransformer(model_name)
-    
+
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """Embed a list of texts"""
         embeddings = self.model.encode(texts, convert_to_numpy=True)
         return embeddings.tolist()
-    
+
     def embed_query(self, text: str) -> List[float]:
         """Embed a single text"""
         embedding = self.model.encode([text], convert_to_numpy=True)[0]
         return embedding.tolist()
 
+
 class EmbeddingManager:
     """Manager for creating and managing embeddings"""
-    
+
     def __init__(self):
         self.embeddings = LocalEmbeddings()
         self.data_dir = settings.DATA_DIR
         self.index_dir = settings.INDEXES_DIR
-        
+
     def _prepare_job_text(self, job: JobPosting) -> str:
         """Prepare job posting text for embedding"""
         return f"""
@@ -53,19 +51,20 @@ class EmbeddingManager:
         Experience Level: {job.experience_level or 'Not specified'}
         Remote Allowed: {'Yes' if job.remote_allowed else 'No'}
         """
-        
+
     def _prepare_candidate_text(self, candidate: CandidateProfile) -> str:
         """Prepare candidate profile text for embedding"""
-        experience_text = "\n".join([
-            f"- {exp.title} at {exp.company}: {exp.description}"
-            for exp in candidate.experience
-        ])
-        
-        education_text = "\n".join([
-            f"- {edu.degree} from {edu.institution}"
-            for edu in candidate.education
-        ])
-        
+        experience_text = "\n".join(
+            [
+                f"- {exp.title} at {exp.company}: {exp.description}"
+                for exp in candidate.experience
+            ]
+        )
+
+        education_text = "\n".join(
+            [f"- {edu.degree} from {edu.institution}" for edu in candidate.education]
+        )
+
         return f"""
         Name: {candidate.name}
         Location: {candidate.location or 'Not specified'}
@@ -80,7 +79,7 @@ class EmbeddingManager:
         Desired Location: {candidate.desired_location or 'Not specified'}
         Remote Preference: {'Yes' if candidate.remote_preference else 'No'}
         """
-        
+
     def create_job_embeddings(self, force: bool = False, batch_size: int = 50) -> FAISS:
         """Create embeddings for job postings"""
         try:
@@ -88,83 +87,93 @@ class EmbeddingManager:
             if not force and index_path.exists():
                 logger.info("Job embeddings already exist. Use force=True to recreate.")
                 return self.load_embeddings("jobs")
-            
+
             # Load processed job data
             with open(self.data_dir / "processed/structured_jobs.json", "r") as f:
                 jobs_data = json.load(f)
-            
+
             jobs = [JobPosting(**job) for job in jobs_data]
             vectorstore = None
-            
+
             # Process in batches
             for i in range(0, len(jobs), batch_size):
                 batch = jobs[i:i + batch_size]
                 texts = [self._prepare_job_text(job) for job in batch]
                 metadatas = [job.dict() for job in batch]
-                
+
                 # Create or merge FAISS index
                 if vectorstore is None:
                     vectorstore = FAISS.from_texts(
-                        texts=texts,
-                        embedding=self.embeddings,
-                        metadatas=metadatas
+                        texts=texts, embedding=self.embeddings, metadatas=metadatas
                     )
                 else:
                     vectorstore.add_texts(texts=texts, metadatas=metadatas)
-                
-                logger.info(f"Processed batch {i//batch_size + 1} ({i+len(batch)}/{len(jobs)} jobs)")
-            
+
+                logger.info(
+                    f"Processed batch {i // batch_size + 1} "
+                    f"({i + len(batch)}/{len(jobs)} jobs)"
+                )
+
             # Save index
             vectorstore.save_local(str(index_path))
             logger.info(f"Successfully created embeddings for {len(jobs)} job postings")
             return vectorstore
-            
+
         except Exception as e:
             logger.error(f"Error creating job embeddings: {str(e)}")
             raise EmbeddingError(f"Failed to create job embeddings: {str(e)}")
-            
-    def create_candidate_embeddings(self, force: bool = False, batch_size: int = 50) -> FAISS:
+
+    def create_candidate_embeddings(
+        self, force: bool = False, batch_size: int = 50
+    ) -> FAISS:
         """Create embeddings for candidate profiles"""
         try:
             index_path = self.index_dir / "candidates_index"
             if not force and index_path.exists():
-                logger.info("Candidate embeddings already exist. Use force=True to recreate.")
+                logger.info(
+                    "Candidate embeddings already exist. Use force=True to recreate."
+                )
                 return self.load_embeddings("candidates")
-            
+
             # Load processed candidate data
             with open(self.data_dir / "processed/structured_candidates.json", "r") as f:
                 candidates_data = json.load(f)
-            
-            candidates = [CandidateProfile(**candidate) for candidate in candidates_data]
+
+            candidates = [
+                CandidateProfile(**candidate) for candidate in candidates_data
+            ]
             vectorstore = None
-            
+
             # Process in batches
             for i in range(0, len(candidates), batch_size):
                 batch = candidates[i:i + batch_size]
                 texts = [self._prepare_candidate_text(candidate) for candidate in batch]
                 metadatas = [candidate.dict() for candidate in batch]
-                
+
                 # Create or merge FAISS index
                 if vectorstore is None:
                     vectorstore = FAISS.from_texts(
-                        texts=texts,
-                        embedding=self.embeddings,
-                        metadatas=metadatas
+                        texts=texts, embedding=self.embeddings, metadatas=metadatas
                     )
                 else:
                     vectorstore.add_texts(texts=texts, metadatas=metadatas)
-                
-                logger.info(f"Processed batch {i//batch_size + 1} ({i+len(batch)}/{len(candidates)} candidates)")
-            
+
+                logger.info(
+                    f"Processed batch {i // batch_size + 1} "
+                    f"({i + len(batch)}/{len(candidates)} candidates)"
+                )
+
             # Save index
             vectorstore.save_local(str(index_path))
-            logger.info(f"Successfully created embeddings for {len(candidates)} candidate profiles")
+            logger.info(
+                f"Successfully created embeddings for {len(candidates)} candidate profiles"
+            )
             return vectorstore
-            
+
         except Exception as e:
             logger.error(f"Error creating candidate embeddings: {str(e)}")
             raise EmbeddingError(f"Failed to create candidate embeddings: {str(e)}")
-            
+
     def load_embeddings(self, index_name: str) -> Optional[FAISS]:
         """Load existing embeddings from disk"""
         try:
@@ -172,24 +181,21 @@ class EmbeddingManager:
             if not index_path.exists():
                 logger.warning(f"No existing index found at {index_path}")
                 return None
-                
+
             vectorstore = FAISS.load_local(
                 str(index_path),
                 self.embeddings,
-                allow_dangerous_deserialization=True  # Safe since we created these files
+                allow_dangerous_deserialization=True,  # Safe since we created these files
             )
             logger.info(f"Successfully loaded {index_name} embeddings")
             return vectorstore
-            
+
         except Exception as e:
             logger.error(f"Error loading embeddings: {str(e)}")
             raise EmbeddingError(f"Failed to load embeddings: {str(e)}")
-            
+
     def similarity_search(
-        self,
-        vectorstore: FAISS,
-        query: str,
-        k: int = 5
+        self, vectorstore: FAISS, query: str, k: int = 5
     ) -> List[Dict[str, Any]]:
         """Search for similar documents in the vector store"""
         try:
@@ -198,10 +204,10 @@ class EmbeddingManager:
                 {
                     "document": result[0].page_content,
                     "metadata": result[0].metadata,
-                    "score": result[1]
+                    "score": result[1],
                 }
                 for result in results
             ]
         except Exception as e:
             logger.error(f"Error performing similarity search: {str(e)}")
-            raise EmbeddingError(f"Failed to perform similarity search: {str(e)}") 
+            raise EmbeddingError(f"Failed to perform similarity search: {str(e)}")

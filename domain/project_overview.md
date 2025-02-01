@@ -199,7 +199,7 @@ Step 5: Advanced Prompt Engineering
 	•	Provide explicit instructions to the LLM to produce structured JSON output or bullet points to parse easily.
 	•	Example:
 
-You are an AI that outputs JSON. 
+You are an AI that outputs JSON.
 Keys: "fit_score" (0-100), "candidate_strengths", "candidate_weaknesses".
 ...
 

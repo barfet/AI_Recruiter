@@ -1,24 +1,29 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 from pydantic import BaseModel, Field, EmailStr
-from datetime import datetime
+
 
 class Education(BaseModel):
     """Education entry model"""
+
     degree: str
     institution: str = ""
     start_date: Optional[str] = None
     end_date: Optional[str] = None
 
+
 class Experience(BaseModel):
     """Work experience entry model"""
+
     title: str
     company: str
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     description: str = ""
 
+
 class CandidateProfile(BaseModel):
     """Candidate profile model"""
+
     resume_id: str
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
@@ -38,4 +43,4 @@ class CandidateProfile(BaseModel):
     desired_location: Optional[str] = None
     remote_preference: Optional[bool] = None
     github_url: Optional[str] = None
-    portfolio_url: Optional[str] = None 
+    portfolio_url: Optional[str] = None

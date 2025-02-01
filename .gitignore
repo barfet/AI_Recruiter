@@ -34,4 +34,4 @@ wheels/
 # Project specific
 dataset/
 vector_store/
-*.log 
+*.log

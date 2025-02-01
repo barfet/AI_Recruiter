@@ -7,23 +7,17 @@ logger = setup_logger(__name__)
 router = APIRouter()
 agent = RecruitingAgent()
 
+
 @router.post("/query", response_model=QueryResponse)
 async def process_query(request: QueryRequest) -> QueryResponse:
     """Process a query using the recruiting agent"""
     try:
         response = await agent.run(request.query)
-        return QueryResponse(
-            response=response,
-            success=True,
-            error=None
-        )
+        return QueryResponse(response=response, success=True, error=None)
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}")
-        return QueryResponse(
-            response="",
-            success=False,
-            error=str(e)
-        )
+        return QueryResponse(response="", success=False, error=str(e))
+
 
 @router.post("/reset")
 async def reset_agent():
@@ -34,6 +28,5 @@ async def reset_agent():
     except Exception as e:
         logger.error(f"Error resetting agent memory: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to reset agent memory: {str(e)}"
-        ) 
+            status_code=500, detail=f"Failed to reset agent memory: {str(e)}"
+        )
