@@ -15,8 +15,13 @@ class Settings(BaseSettings):
     # Project paths
     PROJECT_ROOT: Path = Path(__file__).parent.parent.parent
     DATA_DIR: Path = PROJECT_ROOT / "dataset"
+    RAW_DATA_DIR: Path = DATA_DIR / "raw"
     PROCESSED_DATA_DIR: Path = DATA_DIR / "processed"
     INDEXES_DIR: Path = DATA_DIR / "indexes"
+
+    # Job posting directories
+    JOB_POSTINGS_DIR: Path = RAW_DATA_DIR / "jobs"
+    RESUME_DIR: Path = RAW_DATA_DIR / "resumes"
 
     # API Keys
     OPENAI_API_KEY: str
@@ -38,14 +43,20 @@ class Settings(BaseSettings):
     MAX_JOBS: int = 1000  # Maximum number of jobs to process
     MAX_CANDIDATES: int = 100  # Maximum number of candidates to process
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "allow",
+    }
 
 
 # Create global settings instance
 settings = Settings()
 
 # Ensure required directories exist
+settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+settings.RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
 settings.PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 settings.INDEXES_DIR.mkdir(parents=True, exist_ok=True)
+settings.JOB_POSTINGS_DIR.mkdir(parents=True, exist_ok=True)
+settings.RESUME_DIR.mkdir(parents=True, exist_ok=True)

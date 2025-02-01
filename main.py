@@ -25,7 +25,7 @@ def process_data(
             logger.info("Processing candidate resumes...")
             manager = CandidateManager()
             processed = manager.process_candidates()
-            save_json(processed, settings.PROCESSED_DIR / "structured_candidates.json")
+            save_json(processed, settings.PROCESSED_DATA_DIR / "structured_candidates.json")
             logger.info(f"Successfully processed {len(processed)} candidate resumes")
         elif data_type == "jobs":
             logger.info("Processing job postings...")
