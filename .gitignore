@@ -32,6 +32,5 @@ wheels/
 *.swo
 
 # Project specific
-dataset/
-vector_store/
+dataset/raw/
 *.log

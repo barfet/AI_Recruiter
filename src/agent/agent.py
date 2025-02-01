@@ -4,6 +4,8 @@ from langchain.memory import ConversationBufferMemory
 from langchain.prompts import MessagesPlaceholder, ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain.tools import Tool
 from langchain_core.messages import AIMessage, HumanMessage
+from typing import Dict, Any, Optional
+from pydantic import BaseModel, Field
 
 from src.core.logging import setup_logger
 from src.agent.tools import (
@@ -19,12 +21,21 @@ from src.core.config import settings
 logger = setup_logger(__name__)
 
 
+class AgentOutput(BaseModel):
+    """Standardized output for agent responses"""
+    output: str = Field(..., description="The agent's response")
+
+
 class RecruitingAgent:
     """Agent for handling recruiting tasks"""
 
     def __init__(self, temperature: float = 0.7):
         """Initialize the agent with tools and LLM"""
-        self.llm = ChatOpenAI(model=settings.LLM_MODEL, temperature=temperature)
+        self.llm = ChatOpenAI(
+            model=settings.LLM_MODEL, 
+            temperature=temperature,
+            callbacks=None  # Exclude callbacks from serialization
+        )
         
         # Initialize chains
         self.match_chain = CandidateJobMatchChain(llm=self.llm)
@@ -35,7 +46,7 @@ class RecruitingAgent:
             SearchJobsTool,
             SearchCandidatesTool,
             MatchJobCandidatesTool,
-            SkillAnalysisTool,
+            SkillAnalysisTool(),
             InterviewQuestionGenerator,
             Tool(
                 name="detailed_match_analysis",
@@ -127,6 +138,8 @@ class RecruitingAgent:
             memory=self.memory,
             verbose=True,
             max_iterations=3,
+            handle_parsing_errors=True,
+            return_intermediate_steps=False
         )
 
     async def _run_match_analysis(self, input_str: str) -> str:

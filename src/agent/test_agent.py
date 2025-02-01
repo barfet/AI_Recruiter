@@ -87,18 +87,94 @@ async def test_interview_questions():
     logger.info(response)
 
 
+async def test_enhanced_analysis():
+    """Test the enhanced structured output functionality"""
+    agent = RecruitingAgent(temperature=0.3)
+    logger.info("\n=== Testing Enhanced Structured Analysis ===")
+    
+    try:
+        # 1. Find a suitable job
+        job_response = await agent.run(
+            "Find me a senior software engineer position requiring Python and AWS"
+        )
+        job_data = parse_response(job_response)
+        job_id = job_data.get("job_id")
+        logger.info(f"\nFound Job ID: {job_id}")
+        
+        # 2. Find a matching candidate
+        candidate_response = await agent.run(
+            "Find a candidate with strong Python and cloud experience"
+        )
+        candidate_data = parse_response(candidate_response)
+        resume_id = candidate_data.get("resume_id")
+        logger.info(f"\nFound Resume ID: {resume_id}")
+        
+        # 3. Run skill analysis
+        analysis_response = await agent.run(
+            f"Analyze the skill match between job {job_id} and candidate {resume_id}"
+        )
+        
+        # 4. Parse and validate the structured output
+        try:
+            analysis_data = json.loads(analysis_response)
+            logger.info("\nStructured Analysis Results:")
+            logger.info(f"Fit Score: {analysis_data.get('fit_score')}%")
+            logger.info("\nStrengths:")
+            for strength in analysis_data.get('candidate_strengths', []):
+                logger.info(f"- {strength}")
+            
+            logger.info("\nWeaknesses:")
+            for weakness in analysis_data.get('candidate_weaknesses', []):
+                logger.info(f"- {weakness}")
+            
+            logger.info("\nNext Steps:")
+            for step in analysis_data.get('next_steps', []):
+                logger.info(f"- {step}")
+            
+            logger.info("\nRecommendations:")
+            for rec in analysis_data.get('recommendations', []):
+                logger.info(f"- {rec}")
+            
+            # 5. Validate required fields
+            required_fields = [
+                'fit_score', 
+                'candidate_strengths', 
+                'candidate_weaknesses',
+                'next_steps',
+                'recommendations',
+                'metadata'
+            ]
+            
+            missing_fields = [
+                field for field in required_fields 
+                if field not in analysis_data
+            ]
+            
+            if missing_fields:
+                logger.error(f"Missing required fields: {missing_fields}")
+            else:
+                logger.info("\nAll required fields present in the response")
+            
+        except json.JSONDecodeError:
+            logger.error("Failed to parse analysis response as JSON")
+            logger.error(f"Raw response: {analysis_response}")
+            
+    except Exception as e:
+        logger.error(f"Error in enhanced analysis test: {str(e)}")
+
+
 async def main():
-    """Run all tests"""
+    """Run all agent tests"""
     logger.info("Starting agent tests...")
     
     try:
         await test_skill_analysis()
         await test_interview_questions()
+        await test_enhanced_analysis()
     except Exception as e:
         logger.error(f"Error in tests: {str(e)}")
-        logger.exception("Full traceback:")
     
-    logger.info("Tests completed")
+    logger.info("Agent tests completed")
 
 
 if __name__ == "__main__":
