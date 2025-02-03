@@ -35,3 +35,4 @@ wheels/
 dataset/
 *.log
 .chroma/
+chroma_db/

@@ -60,7 +60,14 @@ cp .env.example .env
 
 3. **Run Tests**
 ```bash
-pytest
+# Run all tests
+pytest tests/ -v
+
+# Run only unit tests
+pytest tests/unit/ -v
+
+# Run only integration tests
+pytest tests/integration/ -v -m integration
 ```
 
 4. **Start Server**
