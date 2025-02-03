@@ -1,9 +1,13 @@
 """Multi-step chains for complex recruiting workflows"""
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from operator import itemgetter
 from langchain_core.runnables import RunnablePassthrough
-from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_community.chat_models import ChatOpenAI
+from langchain_core.output_parsers import StrOutputParser
+import json
+import logging
 
 from src.core.config import settings
 from src.core.logging import setup_logger
@@ -22,142 +26,109 @@ logger = setup_logger(__name__)
 class CandidateJobMatchChain:
     """Chain for comprehensive candidate-job matching analysis"""
 
-    def __init__(self, llm: Optional[ChatOpenAI] = None):
-        self.llm = llm or ChatOpenAI(
-            model=settings.LLM_MODEL,
-            temperature=0.0
+    def __init__(self, model_name: str = "gpt-3.5-turbo"):
+        """Initialize the chain."""
+        self.llm = ChatOpenAI(model_name=model_name)
+        
+        # Matching prompt
+        self.match_prompt = ChatPromptTemplate.from_template(
+            """Analyze the match between the following job and candidate:
+            
+            Job Description: {job_description}
+            Required Skills: {required_skills}
+            
+            Candidate Profile: {candidate_profile}
+            Candidate Skills: {candidate_skills}
+            
+            Provide a detailed analysis of the match in JSON format with the following fields:
+            - match_score (0-100)
+            - strengths
+            - weaknesses
+            - recommendations"""
         )
-        self._init_chains()
-
-    def _init_chains(self):
-        """Initialize all component chains"""
-        # 1. Candidate Summary Chain with dynamic context
-        candidate_summary_prompt = create_dynamic_job_prompt(context={"role_type": "technical"})
-        self.candidate_summary_chain = candidate_summary_prompt | self.llm
-
-        # 2. Job Analysis Chain with focus areas
-        job_analysis_prompt = create_skill_analysis_prompt(
-            focus_areas=["Technical Skills", "Experience", "Culture Fit"]
+        
+        # Create chain
+        self.match_chain = (
+            self.match_prompt 
+            | self.llm 
+            | StrOutputParser()
         )
-        self.job_analysis_chain = job_analysis_prompt | self.llm
 
-        # 3. Skills Gap Analysis Chain
-        skills_gap_prompt = create_skill_analysis_prompt(
-            focus_areas=["Required Skills", "Nice-to-Have Skills", "Missing Skills"]
-        )
-        self.skills_gap_chain = skills_gap_prompt | self.llm
-
-        # 4. Interview Strategy Chain
-        interview_strategy_prompt = create_interview_prompt(
-            difficulty="advanced",
-            question_type="technical"
-        )
-        self.interview_strategy_chain = interview_strategy_prompt | self.llm
-
-    async def run(self, candidate_info: str, job_info: str) -> Dict:
-        """Run the full analysis chain"""
+    async def analyze_match(
+        self,
+        job_description: str,
+        required_skills: List[str],
+        candidate_profile: str,
+        candidate_skills: List[str]
+    ) -> Dict[str, Any]:
+        """Analyze the match between a job and candidate."""
         try:
-            # Run each chain in sequence
-            candidate_summary = await self.candidate_summary_chain.ainvoke({
-                "query": job_info,
-                "few_shot_examples": JOB_MATCH_EXAMPLES,
-                "context_info": ""
+            response = await self.match_chain.ainvoke({
+                "job_description": job_description,
+                "required_skills": ", ".join(required_skills),
+                "candidate_profile": candidate_profile,
+                "candidate_skills": ", ".join(candidate_skills)
             })
             
-            job_analysis = await self.job_analysis_chain.ainvoke({
-                "job_requirements": job_info,
-                "candidate_skills": candidate_info,
-                "few_shot_examples": SKILL_ANALYSIS_EXAMPLES,
-                "focus_area_info": ""
-            })
+            # Parse response as JSON
+            analysis = json.loads(response)
+            return analysis
             
-            skills_gap = await self.skills_gap_chain.ainvoke({
-                "job_requirements": job_info,
-                "candidate_skills": candidate_info,
-                "few_shot_examples": SKILL_ANALYSIS_EXAMPLES,
-                "focus_area_info": ""
-            })
-            
-            interview_strategy = await self.interview_strategy_chain.ainvoke({
-                "topic": "system design",
-                "context": "scalability and performance",
-                "few_shot_examples": JOB_MATCH_EXAMPLES
-            })
-            
-            return {
-                "candidate_summary": candidate_summary,
-                "job_analysis": job_analysis,
-                "skills_gap_analysis": skills_gap,
-                "interview_strategy": interview_strategy
-            }
         except Exception as e:
-            logger.error(f"Error running match chain: {str(e)}")
-            raise
+            logger.error(f"Error analyzing match: {str(e)}")
+            return {}
 
 
 class InterviewWorkflowChain:
     """Chain for managing the interview process workflow"""
 
-    def __init__(self, llm: Optional[ChatOpenAI] = None):
-        self.llm = llm or ChatOpenAI(
-            model=settings.LLM_MODEL,
-            temperature=0.0
+    def __init__(self, model_name: str = "gpt-3.5-turbo"):
+        """Initialize the chain."""
+        self.llm = ChatOpenAI(model_name=model_name)
+        
+        # Question generation prompt
+        self.question_prompt = ChatPromptTemplate.from_template(
+            """Given the following job information and candidate background, generate relevant interview questions.
+            
+            Job Info: {job_info}
+            Candidate Info: {candidate_info}
+            Focus Areas: {focus_areas}
+            Difficulty: {difficulty}
+            
+            Generate 5 technical interview questions that will help assess the candidate's fit for this role.
+            Format your response as a JSON array of questions."""
         )
-        self._init_chains()
-
-    def _init_chains(self):
-        """Initialize interview workflow chains"""
-        # 1. Question Generation Chain with dynamic difficulty
-        question_gen_prompt = create_interview_prompt(
-            difficulty="intermediate",
-            question_type="technical"
+        
+        # Create chain
+        self.question_chain = (
+            self.question_prompt 
+            | self.llm 
+            | StrOutputParser()
         )
-        self.question_gen_chain = question_gen_prompt | self.llm
-
-        # 2. Response Evaluation Chain
-        response_eval_prompt = create_skill_analysis_prompt(
-            focus_areas=["Technical Accuracy", "Communication", "Problem Solving"]
-        )
-        self.response_eval_chain = response_eval_prompt | self.llm
-
-        # 3. Feedback Generation Chain
-        feedback_gen_prompt = create_skill_analysis_prompt(
-            focus_areas=["Strengths", "Areas for Improvement", "Overall Fit"]
-        )
-        self.feedback_gen_chain = feedback_gen_prompt | self.llm
 
     async def generate_questions(
         self,
         job_info: str,
-        candidate_info: str,
-        focus_areas: List[str],
+        candidate_info: str = "",
+        focus_areas: List[str] = None,
         difficulty: str = "intermediate"
-    ) -> Dict:
-        """Generate interview questions with dynamic difficulty"""
+    ) -> List[str]:
+        """Generate interview questions."""
         try:
-            # Create a new prompt with the specified difficulty
-            prompt = create_interview_prompt(
-                difficulty=difficulty,
-                question_type="technical" if "Technical" in focus_areas else "behavioral"
-            )
-            
-            # Create a new chain with the updated prompt
-            chain = prompt | self.llm
-            
-            # Format topic and context based on focus areas
-            is_technical = "Technical" in focus_areas
-            topic = "system design" if is_technical else "leadership experience"
-            context = "scalability and performance" if is_technical else "team management and collaboration"
-            
-            result = await chain.ainvoke({
-                "topic": topic,
-                "context": context,
-                "few_shot_examples": JOB_MATCH_EXAMPLES
+            response = await self.question_chain.ainvoke({
+                "job_info": job_info,
+                "candidate_info": candidate_info,
+                "focus_areas": focus_areas or ["Technical", "Problem Solving"],
+                "difficulty": difficulty
             })
-            return {"interview_questions": result}
+            
+            # Parse response as JSON
+            questions = json.loads(response)
+            return questions
+            
         except Exception as e:
             logger.error(f"Error generating questions: {str(e)}")
-            raise
+            return []
 
     async def evaluate_response(
         self,

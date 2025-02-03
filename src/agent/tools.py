@@ -11,8 +11,12 @@ from src.core.logging import setup_logger
 from src.embeddings.manager import EmbeddingManager
 from src.vector_store.chroma_store import ChromaStore
 from src.services.skill_matching import SkillMatcher
+from src.services.skill_normalization import SkillNormalizer
 
 logger = logging.getLogger(__name__)
+
+# Initialize skill normalizer as a global instance
+_skill_normalizer = SkillNormalizer()
 
 
 class NumpyJSONEncoder(json.JSONEncoder):
@@ -578,55 +582,5 @@ InterviewQuestionGenerator = Tool(
 )
 
 def extract_skills(text: str) -> Set[str]:
-    """Extract skills from text using simple keyword matching."""
-    # Common variations of skills
-    skill_variations = {
-        'python': ['python', 'py', 'python3'],
-        'aws': ['aws', 'amazon web services', 'aws cloud'],
-        'javascript': ['javascript', 'js', 'node.js', 'nodejs'],
-        'java': ['java', 'java8', 'java11'],
-        'docker': ['docker', 'containerization'],
-        'kubernetes': ['kubernetes', 'k8s'],
-        'sql': ['sql', 'mysql', 'postgresql', 'postgres'],
-        'nosql': ['nosql', 'mongodb', 'dynamodb'],
-        'react': ['react', 'reactjs', 'react.js'],
-        'angular': ['angular', 'angularjs', 'angular2+'],
-        'vue': ['vue', 'vuejs', 'vue.js'],
-        'node': ['node', 'nodejs', 'node.js'],
-        'express': ['express', 'expressjs'],
-        'django': ['django'],
-        'flask': ['flask'],
-        'spring': ['spring', 'spring boot'],
-        'git': ['git', 'github', 'gitlab'],
-        'ci/cd': ['ci/cd', 'jenkins', 'gitlab ci', 'github actions'],
-        'devops': ['devops', 'sre'],
-        'agile': ['agile', 'scrum', 'kanban'],
-        'rest': ['rest', 'restful', 'rest api'],
-        'graphql': ['graphql'],
-        'microservices': ['microservices', 'microservice'],
-        'cloud': ['cloud', 'cloud computing'],
-        'linux': ['linux', 'unix'],
-        'api': ['api', 'apis', 'rest api'],
-        'go': ['go', 'golang'],
-        'rust': ['rust'],
-        'c++': ['c++', 'cpp'],
-        'c#': ['c#', 'csharp', '.net'],
-        '.net': ['.net', 'dotnet', 'asp.net'],
-        'php': ['php'],
-        'ruby': ['ruby', 'rails', 'ruby on rails'],
-        'scala': ['scala'],
-        'swift': ['swift', 'ios'],
-        'kotlin': ['kotlin', 'android'],
-        'typescript': ['typescript', 'ts']
-    }
-    
-    # Convert text to lowercase for case-insensitive matching
-    text = text.lower()
-    
-    # Find all skills
-    found_skills = set()
-    for main_skill, variations in skill_variations.items():
-        if any(var in text for var in variations):
-            found_skills.add(main_skill)
-    
-    return found_skills
+    """Extract skills from text using the SkillNormalizer."""
+    return _skill_normalizer.extract_skills(text)

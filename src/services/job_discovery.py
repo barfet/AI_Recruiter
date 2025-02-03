@@ -10,6 +10,7 @@ from src.agent.chains import CandidateJobMatchChain
 from src.agent.test_agent import parse_response
 from src.core.logging import setup_logger
 from src.services.skill_matching import SkillMatcher
+from src.services.skill_normalization import SkillNormalizer
 
 logger = setup_logger(__name__)
 
@@ -35,6 +36,7 @@ class JobDiscoveryService:
         self.agent = RecruitingAgent(model_name="gpt-3.5-turbo")
         self.match_chain = CandidateJobMatchChain()
         self.skill_matcher = SkillMatcher()
+        self.skill_normalizer = SkillNormalizer()
 
     def _extract_job_id(self, response: str) -> Optional[str]:
         """Extract job ID from agent response."""
@@ -47,73 +49,7 @@ class JobDiscoveryService:
         
     def _get_skill_variations(self, skill: str) -> List[str]:
         """Get common variations of a skill."""
-        variations_map = {
-            "python": ["python3", "python2", "py"],
-            "javascript": ["js", "ecmascript", "node.js", "nodejs"],
-            "machine learning": ["ml", "deep learning", "ai", "artificial intelligence"],
-            "aws": ["amazon web services", "aws cloud", "amazon cloud"],
-            "docker": ["containerization", "containers", "docker container"],
-            "kubernetes": ["k8s", "container orchestration"],
-            "react": ["reactjs", "react.js"],
-            "angular": ["angularjs", "angular.js"],
-            "vue": ["vuejs", "vue.js"],
-            "devops": ["devsecops", "dev ops", "development operations"],
-            "ci/cd": ["continuous integration", "continuous deployment", "cicd"],
-            "git": ["github", "gitlab", "version control"],
-            "sql": ["mysql", "postgresql", "oracle", "database"],
-            "nosql": ["mongodb", "dynamodb", "cassandra"],
-            "rest": ["rest api", "restful", "web services"],
-            "graphql": ["gql", "graph ql"],
-            "java": ["jvm", "j2ee", "spring"],
-            "c#": ["csharp", ".net", "dotnet"],
-            "c++": ["cpp", "cplusplus"],
-            "go": ["golang"],
-            "ruby": ["ruby on rails", "rails"],
-            "php": ["laravel", "symfony"],
-            "scala": ["apache spark", "spark"],
-            "swift": ["ios development", "ios"],
-            "kotlin": ["android development", "android"],
-            "rust": ["rustlang"],
-            "typescript": ["ts"],
-            "html": ["html5"],
-            "css": ["css3", "scss", "sass"],
-            "linux": ["unix", "bash", "shell scripting"],
-            "agile": ["scrum", "kanban", "lean"],
-            "frontend": ["front-end", "front end", "client side"],
-            "backend": ["back-end", "back end", "server side"],
-            "fullstack": ["full-stack", "full stack"],
-            "testing": ["qa", "quality assurance", "test automation"],
-            "security": ["cybersecurity", "infosec", "information security"],
-            "cloud": ["cloud computing", "cloud architecture"],
-            "microservices": ["service oriented architecture", "soa"],
-            "blockchain": ["web3", "cryptocurrency", "crypto"],
-            "data science": ["data analytics", "data analysis", "statistics"],
-            "big data": ["hadoop", "spark", "data engineering"],
-            "nlp": ["natural language processing", "text analytics"],
-            "computer vision": ["cv", "image processing", "opencv"],
-            "mobile": ["mobile development", "app development"],
-            "web": ["web development", "web design"],
-            "ui": ["user interface", "ux/ui"],
-            "ux": ["user experience", "usability"],
-            "api": ["api development", "web services"],
-            "serverless": ["faas", "function as a service"],
-            "networking": ["tcp/ip", "network security"],
-            "architecture": ["system design", "software architecture"],
-        }
-        
-        skill = skill.lower()
-        variations = [skill]
-        
-        # Add direct variations
-        if skill in variations_map:
-            variations.extend(variations_map[skill])
-            
-        # Add reverse lookup
-        for main_skill, skill_variations in variations_map.items():
-            if skill in skill_variations:
-                variations.extend([main_skill] + skill_variations)
-                
-        return list(set(variations))
+        return self.skill_normalizer.find_variations(skill)
 
     def _calculate_skill_match(
         self,
@@ -121,20 +57,20 @@ class JobDiscoveryService:
         job_skills: List[str]
     ) -> Tuple[List[str], List[str], float]:
         """Calculate skill match between candidate and job."""
-        # Normalize skills to lowercase for comparison
-        candidate_skills_norm = [s.lower() for s in candidate_skills]
-        job_skills_norm = [s.lower() for s in job_skills]
+        # Normalize skills
+        candidate_skills_norm = self.skill_normalizer.normalize_skills(candidate_skills)
+        job_skills_norm = self.skill_normalizer.normalize_skills(job_skills)
         
         # Find matching and missing skills with variations
         matching = []
         missing = []
         
-        for job_skill in job_skills:
-            job_variations = self._get_skill_variations(job_skill)
+        for job_skill in job_skills_norm:
+            job_variations = self.skill_normalizer.find_variations(job_skill)
             matched = False
             
-            for candidate_skill in candidate_skills:
-                candidate_variations = self._get_skill_variations(candidate_skill)
+            for candidate_skill in candidate_skills_norm:
+                candidate_variations = self.skill_normalizer.find_variations(candidate_skill)
                 if any(jv in candidate_variations for jv in job_variations):
                     matching.append(job_skill)
                     matched = True
