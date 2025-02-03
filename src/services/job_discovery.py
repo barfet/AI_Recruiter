@@ -9,6 +9,7 @@ from src.agent.agent import RecruitingAgent
 from src.agent.chains import CandidateJobMatchChain
 from src.agent.test_agent import parse_response
 from src.core.logging import setup_logger
+from src.services.skill_matching import SkillMatcher
 
 logger = setup_logger(__name__)
 
@@ -33,6 +34,7 @@ class JobDiscoveryService:
         self.job_manager = job_manager
         self.agent = RecruitingAgent(model_name="gpt-3.5-turbo")
         self.match_chain = CandidateJobMatchChain()
+        self.skill_matcher = SkillMatcher()
 
     def _extract_job_id(self, response: str) -> Optional[str]:
         """Extract job ID from agent response."""
@@ -461,32 +463,13 @@ class JobDiscoveryService:
                             candidate_skills = [s.strip() for s in candidate_skills.split(",")]
                     candidate_skills = [skill.lower() for skill in candidate_skills]
 
-                    # Calculate match scores
-                    matching_skills = []
-                    for job_skill in job_skills:
-                        job_skill_lower = job_skill.lower()
-                        # Check for exact matches
-                        if job_skill_lower in candidate_skills:
-                            matching_skills.append(job_skill)
-                            continue
-                        
-                        # Check for semantic matches
-                        for candidate_skill in candidate_skills:
-                            if self._are_skills_semantically_similar(job_skill_lower, candidate_skill):
-                                matching_skills.append(job_skill)
-                                break
-
-                    # Calculate match score (0-100)
-                    match_score = (len(matching_skills) / len(job_skills) * 100) if job_skills else 0
-
-                    # Add semantic score boost for related skills
-                    semantic_boost = 0
-                    for job_skill in job_skills:
-                        for candidate_skill in candidate_skills:
-                            if job_skill not in matching_skills and self._are_skills_semantically_similar(job_skill, candidate_skill):
-                                semantic_boost += 10  # Add 10% for each semantically similar skill
-
-                    final_score = min(100, match_score + semantic_boost)
+                    # Use SkillMatcher to analyze match
+                    match_results = self.skill_matcher.calculate_match_score(
+                        required_skills=job_skills,
+                        candidate_skills=candidate_skills,
+                        threshold=0.7,
+                        semantic_weight=0.8
+                    )
 
                     # Add candidate to results with match information
                     results.append({
@@ -494,8 +477,10 @@ class JobDiscoveryService:
                         "name": candidate_data.get("name", "Unknown"),
                         "skills": candidate_skills,
                         "experience": candidate_data.get("experience", []),
-                        "match_score": final_score,
-                        "matching_skills": matching_skills
+                        "match_score": match_results["match_score"],
+                        "matching_skills": match_results["exact_matches"],
+                        "semantic_matches": [(req, cand, score) for req, cand, score in match_results["semantic_matches"]],
+                        "missing_skills": match_results["missing_skills"]
                     })
 
                 except Exception as e:
@@ -533,37 +518,26 @@ class JobDiscoveryService:
             if isinstance(candidate_skills, str):
                 candidate_skills = [s.strip() for s in candidate_skills.split(",")]
 
-            # Calculate skill match
-            matching_skills = []
-            for job_skill in job_skills:
-                # Check for exact matches
-                if job_skill.lower() in [s.lower() for s in candidate_skills]:
-                    matching_skills.append(job_skill)
-                    continue
-                
-                # Check for semantic matches
-                for candidate_skill in candidate_skills:
-                    if self._are_skills_semantically_similar(job_skill, candidate_skill):
-                        matching_skills.append(job_skill)
-                        break
+            # Use SkillMatcher to analyze match
+            match_results = self.skill_matcher.calculate_match_score(
+                required_skills=job_skills,
+                candidate_skills=candidate_skills,
+                threshold=0.7,
+                semantic_weight=0.8
+            )
 
-            missing_skills = [s for s in job_skills if s not in matching_skills]
-            additional_skills = [s for s in candidate_skills if s not in job_skills]
-
-            # Calculate scores
-            skill_match_score = (len(matching_skills) / len(job_skills) * 100) if job_skills else 0
-            semantic_match_score = 70  # Default semantic score, can be adjusted based on actual semantic analysis
-
-            # Calculate combined score
-            combined_score = (skill_match_score * 0.7) + (semantic_match_score * 0.3)
+            # Get additional skills (candidate skills not matched to any job skills)
+            matched_skills = set(match_results["exact_matches"]) | {m[1] for m in match_results["semantic_matches"]}
+            additional_skills = [s for s in candidate_skills if s not in matched_skills]
 
             return {
                 "match_analysis": {
-                    "skill_match_score": skill_match_score,
-                    "semantic_match_score": semantic_match_score,
-                    "combined_score": combined_score,
-                    "matching_skills": matching_skills,
-                    "missing_skills": missing_skills,
+                    "skill_match_score": match_results["exact_score"],
+                    "semantic_match_score": match_results["semantic_score"],
+                    "combined_score": match_results["match_score"],
+                    "matching_skills": match_results["exact_matches"],
+                    "semantic_matches": [(req, cand, score) for req, cand, score in match_results["semantic_matches"]],
+                    "missing_skills": match_results["missing_skills"],
                     "additional_skills": additional_skills
                 },
                 "candidate_info": {

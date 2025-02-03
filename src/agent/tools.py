@@ -1,14 +1,16 @@
+"""Tools for the recruiting agent."""
+import asyncio
 from typing import Dict, Any, Optional, List, Set, Union
 from pydantic import BaseModel, Field
 from langchain.tools import BaseTool, Tool, StructuredTool
 import json
 import numpy as np
 import logging
-import asyncio
 
 from src.core.logging import setup_logger
 from src.embeddings.manager import EmbeddingManager
 from src.vector_store.chroma_store import ChromaStore
+from src.services.skill_matching import SkillMatcher
 
 logger = logging.getLogger(__name__)
 
@@ -347,95 +349,27 @@ def analyze_skills(input_data: SkillAnalysisInput) -> str:
         return f"Error: {str(e)}"
 
 
-def generate_questions(input_data: InterviewQuestionsInput) -> str:
-    """Generate interview questions"""
+async def generate_interview_questions(input_data: InterviewQuestionsInput) -> Dict[str, Any]:
+    """Generate interview questions based on job and candidate info."""
     try:
-        job_id = input_data.job_id
-        resume_id = input_data.resume_id
+        from src.agent.chains import InterviewWorkflowChain
+        chain = InterviewWorkflowChain()
         
-        if not job_id:
-            return "Error: job_id is required"
+        # Get job and candidate info from IDs
+        # This is a placeholder - you'll need to implement the actual data retrieval
+        job_info = "Sample job info"  # Replace with actual job info retrieval
+        candidate_info = "Sample candidate info" if input_data.resume_id else ""
         
-        embedding_manager = EmbeddingManager()
-        jobs_store = embedding_manager.load_embeddings("jobs")
-        candidates_store = embedding_manager.load_embeddings("candidates")
-        
-        # Find job
-        job_results = embedding_manager.similarity_search(
-            jobs_store,
-            f"job_id:{job_id}",
-            k=1
+        questions = await chain.generate_questions(
+            job_info=job_info,
+            candidate_info=candidate_info,
+            focus_areas=["Technical", "Problem Solving"],
+            difficulty="intermediate"
         )
-        
-        if not job_results:
-            return "Error: Job not found"
-            
-        job = job_results[0]
-        
-        # Get job details
-        job_title = job["metadata"]["title"]
-        required_skills = job["metadata"].get("skills", [])
-        requirements = job["metadata"].get("requirements", [])
-        
-        # Generate skill questions
-        skill_questions = []
-        for skill in required_skills:
-            skill_questions.extend([
-                f"Can you describe a project where you used {skill}?",
-                f"What's the most challenging problem you've solved using {skill}?",
-                f"How do you stay updated with the latest developments in {skill}?"
-            ])
-        skill_questions = skill_questions[:5]  # Limit to top 5
-        
-        # Generate experience questions
-        base_questions = [
-            f"What interests you about this {job_title} position?",
-            "How do you handle tight deadlines and pressure?",
-            "Describe a challenging project you led and its outcome.",
-            "How do you approach learning new technologies?",
-            "Tell me about a time you had to resolve a conflict in your team."
-        ]
-        
-        requirement_questions = [
-            f"How does your experience align with our requirement for {req}?"
-            for req in requirements[:3]
-        ]
-        
-        result = {
-            "job": {
-                "job_id": job_id,
-                "title": job_title,
-                "company": job["metadata"]["company"]
-            },
-            "questions": {
-                "technical_skills": skill_questions,
-                "experience_and_behavioral": base_questions + requirement_questions
-            }
-        }
-        
-        # If resume_id provided, add candidate-specific questions
-        if resume_id:
-            candidate_results = embedding_manager.similarity_search(
-                candidates_store,
-                f"resume_id:{resume_id}",
-                k=1
-            )
-            
-            if candidate_results:
-                candidate = candidate_results[0]
-                candidate_skills = candidate["metadata"].get("skills", [])
-                missing_skills = set(required_skills) - set(candidate_skills)
-                
-                result["questions"]["candidate_specific"] = [
-                    f"I notice you haven't listed {skill}. Do you have any experience with it?" 
-                    for skill in list(missing_skills)[:3]
-                ]
-        
-        return json.dumps(result, indent=2, cls=NumpyJSONEncoder)
-        
+        return questions
     except Exception as e:
-        logger.error(f"Error generating questions: {str(e)}")
-        return f"Error: {str(e)}"
+        logger.error(f"Error generating interview questions: {str(e)}")
+        raise
 
 
 def search_jobs_structured(input_data: SearchJobsInput) -> str:
@@ -480,84 +414,59 @@ class SkillAnalysisTool(BaseTool):
     name: str = "skill_analysis"
     description: str = "Analyze skill matches between job requirements and candidate skills"
     store: Optional[Any] = None
+    skill_matcher: Optional[Any] = None
 
     def __init__(self, store: Optional[Any] = None) -> None:
         """Initialize the tool with an optional store."""
         super().__init__()
         self.store = store
+        self.skill_matcher = SkillMatcher()
 
-    def _calculate_skill_score(self, required_skills: List[str], candidate_skills: List[str]) -> float:
-        """Calculate skill match score."""
-        if not required_skills or not candidate_skills:
+    def _calculate_skill_score(self, job_skills: List[str], candidate_skills: List[str]) -> float:
+        """Calculate the skill match score.
+
+        Args:
+            job_skills: List of required job skills
+            candidate_skills: List of candidate skills
+
+        Returns:
+            float: Match score between 0 and 1
+        """
+        if not job_skills:
             return 0.0
 
-        # Normalize skills
-        required = [s.lower().strip() for s in required_skills]
-        candidate = [s.lower().strip() for s in candidate_skills]
+        exact_matches = set(job_skills) & set(candidate_skills)
+        exact_score = len(exact_matches) / len(job_skills)
 
-        # Find matching skills
-        matches = sum(1 for skill in required if skill in candidate)
-        
-        # Calculate score (exact matches)
-        return matches / len(required) if required else 0.0
+        # Calculate semantic matches for remaining skills
+        remaining_job_skills = [s for s in job_skills if s not in exact_matches]
+        remaining_candidate_skills = [s for s in candidate_skills if s not in exact_matches]
 
-    def _are_skills_semantically_similar(self, skill1: str, skill2: str) -> bool:
-        """Check if two skills are semantically similar."""
-        # Convert skills to lowercase for comparison
-        skill1 = skill1.lower()
-        skill2 = skill2.lower()
+        semantic_matches = []
+        for job_skill in remaining_job_skills:
+            max_similarity = 0.0
+            for candidate_skill in remaining_candidate_skills:
+                similarity = self.skill_matcher.calculate_similarity(job_skill, candidate_skill)
+                max_similarity = max(max_similarity, similarity)
+            if max_similarity >= 0.7:  # Lower threshold for semantic matches
+                semantic_matches.append(job_skill)
 
-        # Direct match
-        if skill1 == skill2:
-            return True
+        semantic_score = len(semantic_matches) / len(job_skills) * 0.8  # Weight semantic matches at 80%
 
-        # Common variations
-        variations = {
-            "ml": ["machine learning", "deep learning", "neural networks", "ai", "artificial intelligence"],
-            "python": ["python3", "python programming", "py"],
-            "javascript": ["js", "ecmascript", "node.js", "nodejs"],
-            "aws": ["amazon web services", "cloud computing"],
-            "frontend": ["front-end", "front end", "ui", "user interface"],
-            "backend": ["back-end", "back end", "server-side"],
-            "devops": ["devsecops", "dev ops", "development operations"],
-            "react": ["reactjs", "react.js"],
-            "vue": ["vuejs", "vue.js"],
-            "angular": ["angularjs", "angular.js"],
-            "node": ["nodejs", "node.js"],
-            "postgres": ["postgresql", "pgsql"],
-            "mysql": ["mariadb", "sql"],
-            "mongodb": ["mongo", "nosql"],
-            "docker": ["containerization", "containers"],
-            "kubernetes": ["k8s", "container orchestration"],
-            "ci/cd": ["continuous integration", "continuous deployment", "continuous delivery", "cicd"],
-            "git": ["version control", "github", "gitlab"],
-            "api": ["rest", "graphql", "web services"],
-            "testing": ["unit testing", "integration testing", "qa", "quality assurance"]
-        }
+        return exact_score + semantic_score
 
-        # Check if either skill is a key in variations and the other is in its list
-        for key, values in variations.items():
-            if (skill1 == key and skill2 in values) or (skill2 == key and skill1 in values):
-                return True
-            if skill1 in values and skill2 in values:
-                return True
+    async def _arun(self, input_data: Union[str, Dict[str, List[str]], List[str]]) -> str:
+        """Run the skill analysis asynchronously.
 
-        return False
+        Args:
+            input_data: Either a string in format "job_id:XXX resume_id:YYY", a dict with required_skills and candidate_skills,
+                       or a list of [job_skills, candidate_skills]
 
-    def _run(self, input_data: Union[str, List[str], Dict[str, List[str]]]) -> str:
-        """Run skill analysis synchronously."""
+        Returns:
+            JSON string containing match results
+        """
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        return loop.run_until_complete(self._arun(input_data))
-
-    async def _arun(self, input_data: Union[str, List[str], Dict[str, List[str]]]) -> str:
-        """Run skill analysis asynchronously."""
-        try:
-            # Handle string input (job_id:123 resume_id:456 format)
+            # Parse input and get skills
             if isinstance(input_data, str):
                 if not self.store:
                     raise ValueError("ChromaStore instance required for ID-based analysis")
@@ -580,91 +489,92 @@ class SkillAnalysisTool(BaseTool):
                 job_skills = [skill.lower() for skill in job_data["skills"]]
                 candidate_skills = [skill.lower() for skill in candidate_data["skills"]]
 
-            # Handle direct skill list input
             elif isinstance(input_data, dict):
                 if not input_data.get("required_skills") or not input_data.get("candidate_skills"):
                     raise ValueError("Both required_skills and candidate_skills must be provided")
 
-                if not isinstance(input_data["required_skills"], (list, tuple)):
+                # Validate skill lists
+                if not isinstance(input_data.get("required_skills"), (list, tuple)):
                     raise ValueError("Invalid format: required_skills must be a list")
-                if not isinstance(input_data["candidate_skills"], (list, tuple)):
+                if not isinstance(input_data.get("candidate_skills"), (list, tuple)):
                     raise ValueError("Invalid format: candidate_skills must be a list")
 
-                job_skills = [skill.lower() for skill in input_data["required_skills"]]
-                candidate_skills = [skill.lower() for skill in input_data["candidate_skills"]]
+                job_skills = [s.lower() for s in input_data["required_skills"]]
+                candidate_skills = [s.lower() for s in input_data["candidate_skills"]]
+
+            elif isinstance(input_data, list) and len(input_data) == 2:
+                if not isinstance(input_data[0], (list, tuple)) or not isinstance(input_data[1], (list, tuple)):
+                    raise ValueError("Invalid format: both inputs must be lists of skills")
+
+                job_skills, candidate_skills = input_data
+                job_skills = [s.lower() for s in job_skills]
+                candidate_skills = [s.lower() for s in candidate_skills]
+
             else:
                 raise ValueError("Invalid input format")
 
             # Calculate exact matches
-            matching_skills = []
-            missing_skills = []
-            additional_skills = []
+            exact_matches = set(job_skills) & set(candidate_skills)
+            exact_score = len(exact_matches) / len(job_skills) if job_skills else 0
 
-            for skill in job_skills:
-                if skill in candidate_skills:
-                    matching_skills.append(skill)
-                else:
-                    missing_skills.append(skill)
+            # Calculate semantic matches
+            remaining_job_skills = [s for s in job_skills if s not in exact_matches]
+            remaining_candidate_skills = [s for s in candidate_skills if s not in exact_matches]
 
-            for skill in candidate_skills:
-                if skill not in job_skills:
-                    additional_skills.append(skill)
+            semantic_matches = []
+            for job_skill in remaining_job_skills:
+                max_similarity = 0.0
+                best_match = None
+                for candidate_skill in remaining_candidate_skills:
+                    similarity = self.skill_matcher.calculate_similarity(job_skill, candidate_skill)
+                    if similarity > max_similarity:
+                        max_similarity = similarity
+                        best_match = candidate_skill
+                if max_similarity >= 0.65:  # Lower threshold for semantic matches
+                    semantic_matches.append((job_skill, best_match))
 
-            # Calculate match score
-            total_required = len(job_skills)
-            exact_matches = len(matching_skills)
-            match_score = (exact_matches / total_required * 100) if total_required > 0 else 0
+            semantic_score = len(semantic_matches) / len(job_skills) * 0.8 if job_skills else 0  # Weight semantic matches at 80%
+            combined_score = (exact_score + semantic_score) * 100  # Convert to percentage
 
-            # Calculate semantic match score for missing skills
-            semantic_matches = 0
-            semantic_matching_pairs = []  # Keep track of which skills matched semantically
-            for job_skill in missing_skills[:]:  # Use a copy to avoid modifying while iterating
-                for candidate_skill in candidate_skills:
-                    if self._are_skills_semantically_similar(job_skill, candidate_skill):
-                        semantic_matches += 1
-                        semantic_matching_pairs.append((job_skill, candidate_skill))
-                        missing_skills.remove(job_skill)
-                        break
+            # Get missing skills (those without exact or semantic matches)
+            matched_job_skills = exact_matches | {m[0] for m in semantic_matches}
+            missing_skills = [s for s in job_skills if s not in matched_job_skills]
 
-            semantic_score = (semantic_matches / total_required * 100) if total_required > 0 else 0
-            
-            # Calculate final score - combine exact and semantic matches
-            # Weight exact matches more heavily than semantic matches
-            if total_required > 0:
-                final_score = ((exact_matches + 0.8 * semantic_matches) / total_required) * 100
-            else:
-                final_score = 0
+            # Get additional skills (candidate skills not matched to any job skills)
+            matched_candidate_skills = exact_matches | {m[1] for m in semantic_matches if m[1]}
+            additional_skills = [s for s in candidate_skills if s not in matched_candidate_skills]
 
-            analysis = {
-                "matching_skills": matching_skills,
+            result = {
+                "status": "success",
+                "match_score": combined_score,
+                "exact_match_score": exact_score * 100,
+                "semantic_match_score": semantic_score * 100,
+                "matching_skills": list(exact_matches),
+                "semantic_matches": [(s[0], s[1]) for s in semantic_matches],
                 "missing_skills": missing_skills,
                 "additional_skills": additional_skills,
-                "semantic_matches": semantic_matching_pairs,  # Add semantic matches for debugging
-                "match_score": final_score,
-                "semantic_score": semantic_score,
-                "combined_score": final_score,
-                "skill_match_score": final_score,  # For backward compatibility
-                "semantic_match_score": semantic_score,  # For backward compatibility
-                "status": "success"
+                "skill_match_score": exact_score * 100,  # For backward compatibility
+                "combined_score": combined_score  # For backward compatibility
             }
 
-            return json.dumps(analysis)
+            return json.dumps(result)
 
         except Exception as e:
-            error_msg = str(e)
-            logging.error(f"Error in skill analysis: {error_msg}")
-            return json.dumps({
+            logger.error(f"Error in skill analysis: {str(e)}")
+            error_result = {
                 "status": "error",
-                "error": error_msg
-            })
+                "error": str(e)
+            }
+            return json.dumps(error_result)
 
-InterviewQuestionGenerator = Tool.from_function(
-    func=lambda input_str: generate_questions(InterviewQuestionsInput(
-        job_id=input_str.split()[0],
-        resume_id=input_str.split()[1] if len(input_str.split()) > 1 else None
-    )),
-    name="generate_questions",
-    description="Generate tailored interview questions based on job requirements and candidate profile. Input should be a job_id optionally followed by a resume_id, separated by a space.",
+    def _run(self, input_data: Union[str, Dict[str, List[str]], List[str]]) -> str:
+        """Run the skill analysis synchronously."""
+        return asyncio.run(self._arun(input_data))
+
+InterviewQuestionGenerator = Tool(
+    name="interview_question_generator",
+    func=lambda x: asyncio.run(generate_interview_questions(InterviewQuestionsInput(**x))),
+    description="Generate interview questions based on job requirements and optionally candidate background. Input should be a JSON with job_id and optional resume_id."
 )
 
 def extract_skills(text: str) -> Set[str]:
