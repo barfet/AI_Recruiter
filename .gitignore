@@ -34,3 +34,4 @@ wheels/
 # Project specific
 dataset/
 *.log
+.chroma/

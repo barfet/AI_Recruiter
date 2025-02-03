@@ -498,21 +498,36 @@ class SkillAnalysisTool(BaseTool):
             job = job_results[0]
             candidate = candidate_results[0]
             
-            # Extract skills from job and candidate text
-            job_skills = extract_skills(job["document"].lower())
-            candidate_skills = extract_skills(candidate["document"].lower())
+            # Extract skills from metadata
+            job_skills = job["metadata"].get("skills", [])
+            if isinstance(job_skills, str):
+                job_skills = [s.strip() for s in job_skills.split(",")]
+            
+            candidate_skills = candidate["metadata"].get("skills", [])
+            if isinstance(candidate_skills, str):
+                candidate_skills = [s.strip() for s in candidate_skills.split(",")]
+            
+            # Normalize skills to lowercase for comparison
+            job_skills_norm = [s.lower() for s in job_skills]
+            candidate_skills_norm = [s.lower() for s in candidate_skills]
             
             # Calculate matching skills
-            matching_skills = job_skills & candidate_skills
-            missing_skills = job_skills - candidate_skills
-            extra_skills = candidate_skills - job_skills
+            matching_skills = [s for s in job_skills if s.lower() in candidate_skills_norm]
+            missing_skills = [s for s in job_skills if s.lower() not in candidate_skills_norm]
+            extra_skills = [s for s in candidate_skills if s.lower() not in job_skills_norm]
             
-            # Calculate fit score
-            fit_score = len(matching_skills) / len(job_skills) * 100 if job_skills else 0
+            # Calculate skill match score (0-1)
+            skill_score = len(matching_skills) / len(job_skills) if job_skills else 1.0
+            
+            # Calculate semantic match score
+            semantic_score = job_results[0].get("score", 0) or 0
+            
+            # Combine scores with weights
+            combined_score = (semantic_score * 0.7) + (skill_score * 0.3)
             
             # Create standardized output
             output = StandardizedOutput(
-                fit_score=fit_score,
+                fit_score=combined_score * 100,  # Convert to percentage
                 candidate_strengths=[
                     f"Matching skill: {skill}" for skill in matching_skills
                 ] + [
@@ -522,8 +537,8 @@ class SkillAnalysisTool(BaseTool):
                     f"Missing required skill: {skill}" for skill in missing_skills
                 ],
                 next_steps=[
-                    "Schedule technical interview" if fit_score >= 70 else "Recommend additional skill development",
-                    "Consider alternative positions" if fit_score < 50 else "Proceed with hiring process"
+                    "Schedule technical interview" if combined_score >= 0.7 else "Recommend additional skill development",
+                    "Consider alternative positions" if combined_score < 0.5 else "Proceed with hiring process"
                 ],
                 recommendations=[
                     "Focus on acquiring these skills: " + ", ".join(missing_skills) if missing_skills else "Strong skill match - proceed with interview",
@@ -533,9 +548,12 @@ class SkillAnalysisTool(BaseTool):
                     "job_id": job_id,
                     "resume_id": resume_id,
                     "job_title": job["metadata"].get("title"),
-                    "matching_skills": list(matching_skills),
-                    "missing_skills": list(missing_skills),
-                    "extra_skills": list(extra_skills)
+                    "matching_skills": matching_skills,
+                    "missing_skills": missing_skills,
+                    "extra_skills": extra_skills,
+                    "skill_score": skill_score,
+                    "semantic_score": semantic_score,
+                    "combined_score": combined_score
                 }
             )
             
