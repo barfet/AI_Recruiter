@@ -1,59 +1,50 @@
-# Aridmi - AI-Powered Recruitment Platform
+# AI-Powered Recruitment Platform
 
-## Overview
-Aridmi is an advanced AI-powered recruitment platform that streamlines the hiring process through intelligent candidate matching, automated skill assessment, and comprehensive interview management.
+An intelligent recruitment platform that leverages LLMs and vector search for advanced candidate-job matching and skill analysis.
 
-## Current Status
-We have completed Phase 1 of development, focusing on core AI capabilities:
-- ✅ Candidate-Job matching using LangChain and OpenAI
-- ✅ Skill gap analysis
-- ✅ Interview question generation
-- ✅ Response evaluation and feedback
+## 🎯 Core Features
 
-## Key Features
+- **Intelligent Matching**: Advanced semantic matching between job requirements and candidate profiles
+- **Skill Analysis**: Deep skill gap analysis and recommendations
+- **Interview Support**: Dynamic interview question generation and evaluation
+- **Vector Search**: Efficient similarity search for candidates and jobs
+- **Compliance Management**: Automated compliance checking and reporting
 
-### 1. Intelligent Matching
-- Semantic understanding of job requirements
-- Advanced candidate skill analysis
-- Multi-dimensional scoring system
-- Contextual matching algorithms
+## 🏗 Architecture
 
-### 2. Interview Management
-- Automated question generation
-- Technical and behavioral assessment
-- Real-time evaluation
-- Structured feedback system
+```
+src/
+├── agent/                 # AI agent components
+│   ├── chains.py         # LangChain processing chains
+│   ├── tools.py          # Specialized AI tools
+│   └── prompts.py        # Prompt templates
+├── api/                   # API endpoints
+│   └── routes/           # Route definitions
+├── core/                 # Core functionality
+│   ├── config.py         # Configuration management
+│   └── logging.py        # Logging setup
+├── data/                 # Data management
+│   ├── managers/         # Data access layer
+│   └── cleaning/         # Data cleaning utilities
+├── services/            # Business logic
+│   └── job_discovery.py  # Job matching service
+└── vector_store/        # Vector database interface
+    └── chroma_store.py   # ChromaDB implementation
+```
 
-### 3. Workflow Automation
-- End-to-end process management
-- Status tracking
-- Notification system
-- Calendar integration
+## 🛠 Tech Stack
 
-### 4. Analytics & Insights
-- Performance metrics
-- Process optimization
-- Predictive analytics
-- Compliance monitoring
+- **Python 3.9+**: Core language
+- **LangChain**: LLM orchestration
+- **OpenAI GPT-4**: Language model
+- **ChromaDB**: Vector storage
+- **FastAPI**: API framework
+- **Pydantic**: Data validation
+- **pytest**: Testing framework
 
-## Technical Stack
+## 🚀 Getting Started
 
-### Core Technologies
-- Python 3.9+
-- LangChain
-- OpenAI GPT-4
-- Vector Search (Coming Soon)
-- PostgreSQL (Coming Soon)
-
-### Architecture
-- Microservices-based
-- Event-driven
-- Scalable infrastructure
-- Security-first design
-
-## Getting Started
-
-### Prerequisites
+1. **Environment Setup**
 ```bash
 python -m venv venv
 source venv/bin/activate  # Unix
@@ -61,37 +52,122 @@ source venv/bin/activate  # Unix
 pip install -r requirements.txt
 ```
 
-### Configuration
-```python
-# Set your OpenAI API key
-export OPENAI_API_KEY='your-api-key'
-```
-
-### Running Tests
+2. **Configuration**
 ```bash
-PYTHONPATH=$PYTHONPATH:. python src/agent/test_chains.py
+cp .env.example .env
+# Edit .env with your settings
 ```
 
-## Documentation
-- [Technical Architecture](domain/architecture.md)
-- [Product Vision](domain/vision.md)
-- [Use Cases](domain/use_cases.md)
-- [Technical Roadmap](domain/roadmap.md)
+3. **Run Tests**
+```bash
+pytest
+```
 
-## Next Steps
-We are currently moving into Phase 2, which focuses on:
-1. Vector search implementation
-2. Data model development
-3. Caching layer setup
-4. API development
+4. **Start Server**
+```bash
+uvicorn src.api.main:app --reload
+```
 
-See our [Technical Roadmap](domain/roadmap.md) for detailed plans.
+## 📋 Development Guidelines
 
-## Contributing
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+### Code Structure
 
-## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+- **Agents**: Inherit from `BaseAgent`, implement `_run` method
+- **Chains**: Follow `CandidateJobMatchChain` pattern
+- **Tools**: Inherit from `BaseTool`, implement required methods
+- **Managers**: Follow `BaseManager` pattern with logging
 
-## Contact
-For any questions or feedback, please open an issue or contact the maintainers.
+### AI Components
+
+- **Prompts**: 
+  - Include examples and context
+  - Validate outputs
+  - Handle edge cases
+- **LLM Calls**:
+  - Set appropriate temperature
+  - Implement timeout handling
+  - Include error recovery
+- **Embeddings**:
+  - Specify model and dimensions
+  - Implement batch processing
+  - Handle OOV tokens
+
+### Testing
+
+- Unit tests for all components
+- Integration tests for chains
+- Mock external services
+- Test async functionality
+- Validate outputs
+
+## 🔍 Key Patterns
+
+### Chain Pattern
+```python
+class CustomChain:
+    def __init__(self, llm: Optional[ChatOpenAI] = None):
+        self.llm = llm or ChatOpenAI(temperature=0.0)
+        self._init_chains()
+
+    def _init_chains(self):
+        # Initialize component chains
+        pass
+
+    async def run(self, **kwargs):
+        # Chain execution logic
+        pass
+```
+
+### Manager Pattern
+```python
+class CustomManager(BaseManager):
+    def __init__(self):
+        super().__init__()
+        self.logger = setup_logger(__name__)
+
+    async def process_data(self):
+        try:
+            # Processing logic
+            pass
+        except Exception as e:
+            self.logger.error(f"Error: {str(e)}")
+            raise
+```
+
+## 🤝 Contributing
+
+1. Follow the `.cursorrules` configuration
+2. Ensure comprehensive documentation
+3. Add tests for new features
+4. Update relevant documentation
+
+## 📚 Documentation Standards
+
+- Google-style docstrings
+- Include Args, Returns, Raises sections
+- Provide usage examples
+- Document class attributes and methods
+
+## 🔐 Security
+
+- Implement rate limiting
+- Validate all inputs
+- Sanitize LLM outputs
+- Handle sensitive data appropriately
+
+## 📈 Performance
+
+- Use async/await for I/O operations
+- Implement caching where appropriate
+- Batch process embeddings
+- Monitor LLM token usage
+
+## 📝 License
+
+MIT License - see LICENSE file for details
+
+## 🔗 Links
+
+- [Technical Architecture](docs/architecture.md)
+- [API Documentation](docs/api.md)
+- [Development Guide](docs/development.md)
