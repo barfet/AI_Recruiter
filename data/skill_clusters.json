@@ -1,0 +1,76 @@
+{
+  "clusters": {
+    "python": [
+      "python",
+      "python"
+    ],
+    "machine learning": [
+      "machine learning",
+      "machine learning"
+    ],
+    "ml": [
+      "ml",
+      "ml"
+    ],
+    "deep learning": [
+      "deep learning",
+      "deep learning"
+    ],
+    "dl": [
+      "dl",
+      "dl"
+    ],
+    "pytorch": [
+      "pytorch",
+      "pytorch"
+    ],
+    "neural networks": [
+      "neural networks",
+      "neural networks"
+    ],
+    "artificial intelligence": [
+      "artificial intelligence",
+      "artificial intelligence"
+    ],
+    "ai": [
+      "ai",
+      "ai"
+    ],
+    "tensorflow": [
+      "tensorflow",
+      "tensorflow"
+    ],
+    "nlp": [
+      "nlp",
+      "nlp"
+    ],
+    "cv": [
+      "cv",
+      "cv"
+    ],
+    "data science": [
+      "data science",
+      "data science"
+    ],
+    "ds": [
+      "ds",
+      "ds"
+    ]
+  },
+  "canonical_forms": {
+    "python": "python",
+    "machine learning": "machine learning",
+    "ml": "ml",
+    "deep learning": "deep learning",
+    "dl": "dl",
+    "pytorch": "pytorch",
+    "neural networks": "neural networks",
+    "artificial intelligence": "artificial intelligence",
+    "ai": "ai",
+    "tensorflow": "tensorflow",
+    "nlp": "nlp",
+    "cv": "cv",
+    "data science": "data science",
+    "ds": "ds"
+  }
+}

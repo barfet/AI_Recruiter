@@ -15,7 +15,7 @@ class TestJobDiscoveryService:
         """Setup test dependencies."""
         self.store = ChromaStore()
         self.job_manager = JobManager()
-        self.service = JobDiscoveryService(store=self.store, job_manager=self.job_manager)
+        self.service = JobDiscoveryService(store=self.store)
         yield
     
     async def test_detailed_analysis(

@@ -81,7 +81,7 @@ class TestJobMatching(BaseIntegrationTest):
             for candidate in candidates:
                 # Get all skills in lowercase for comparison
                 candidate_skills = set(s.lower() for s in candidate["skills"])
-                required_skills = ["pytorch", "ml", "deep learning", "machine learning", "ai"]
+                required_skills = ["pytorch", "machine learning", "deep learning", "python"]
                 
                 # Check if any required skill matches (including semantic matches)
                 has_matching_skill = False

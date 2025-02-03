@@ -17,7 +17,7 @@ class BaseIntegrationTest:
         self.store = ChromaStore()
         self.job_manager = JobManager()
         self.agent = RecruitingAgent()
-        self.job_service = JobDiscoveryService(store=self.store, job_manager=self.job_manager)
+        self.job_service = JobDiscoveryService(store=self.store)
 
         # Setup test data
         await self._setup_test_data()
@@ -84,4 +84,8 @@ class BaseIntegrationTest:
         for job in self.test_jobs:
             await self.store.delete_job(job["id"])
         for candidate in self.test_candidates:
-            await self.store.delete_candidate(candidate["id"]) 
+            await self.store.delete_candidate(candidate["id"])
+
+    async def cleanup(self) -> None:
+        """Cleanup resources after tests."""
+        await self._cleanup_test_data() 

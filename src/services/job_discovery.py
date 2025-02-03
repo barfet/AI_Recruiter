@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import json
 
 from src.agent.tools import extract_skills
+from src.services.skill_normalization import SkillNormalizer
 from src.vector_store.chroma_store import ChromaStore
 from src.data.managers.job import JobManager
 from src.agent.agent import RecruitingAgent
@@ -10,7 +11,6 @@ from src.agent.chains import CandidateJobMatchChain
 from src.agent.test_agent import parse_response
 from src.core.logging import setup_logger
 from src.services.skill_matching import SkillMatcher
-from src.services.skill_normalization import SkillNormalizer
 
 logger = setup_logger(__name__)
 
@@ -30,13 +30,28 @@ class JobMatch:
 class JobDiscoveryService:
     """Service for discovering relevant job opportunities"""
     
-    def __init__(self, store: ChromaStore, job_manager: JobManager):
+    def __init__(self, store: Any) -> None:
+        """Initialize the service with a store."""
         self.store = store
-        self.job_manager = job_manager
-        self.agent = RecruitingAgent(model_name="gpt-3.5-turbo")
-        self.match_chain = CandidateJobMatchChain()
         self.skill_matcher = SkillMatcher()
         self.skill_normalizer = SkillNormalizer()
+        self.agent = RecruitingAgent(model_name="gpt-3.5-turbo")
+        self.match_chain = CandidateJobMatchChain()
+        
+        # Build initial skill clusters from known variations
+        initial_skills = [
+            "Python", "python", "py",
+            "Machine Learning", "ML", "machine learning", "ml",
+            "Deep Learning", "DL", "deep learning", "dl",
+            "PyTorch", "pytorch", "torch",
+            "Neural Networks", "neural networks", "nn",
+            "Artificial Intelligence", "AI", "artificial intelligence", "ai",
+            "TensorFlow", "tensorflow", "tf",
+            "Natural Language Processing", "NLP", "nlp",
+            "Computer Vision", "CV", "cv",
+            "Data Science", "data science", "DS", "ds"
+        ]
+        self.skill_normalizer.build_clusters(initial_skills)
 
     def _extract_job_id(self, response: str) -> Optional[str]:
         """Extract job ID from agent response."""
@@ -371,7 +386,7 @@ class JobDiscoveryService:
                     if not candidate_id:
                         # Try getting it from metadata
                         metadata = candidate.get("metadata", {})
-                        candidate_id = metadata.get("resume_id")
+                        candidate_id = metadata.get("resume_id") or metadata.get("id")
                         if not candidate_id:
                             logger.error("No candidate ID found in search result")
                             continue
@@ -411,7 +426,7 @@ class JobDiscoveryService:
                     results.append({
                         "id": candidate_id,
                         "name": candidate_data.get("name", "Unknown"),
-                        "skills": candidate_skills,
+                        "skills": candidate_skills,  # Use normalized skills
                         "experience": candidate_data.get("experience", []),
                         "match_score": match_results["match_score"],
                         "matching_skills": match_results["exact_matches"],
@@ -493,81 +508,18 @@ class JobDiscoveryService:
             return {}
 
     def _are_skills_semantically_similar(self, skill1: str, skill2: str) -> bool:
-        """Check if two skills are semantically similar."""
-        # Convert to lowercase for comparison
-        skill1 = skill1.lower().strip()
-        skill2 = skill2.lower().strip()
-
-        # Direct match
-        if skill1 == skill2:
+        """Check if two skills are semantically similar using SkillNormalizer."""
+        # Normalize both skills
+        norm1 = self.skill_normalizer.normalize_skill(skill1)
+        norm2 = self.skill_normalizer.normalize_skill(skill2)
+        
+        # Check if they normalize to the same canonical form
+        if norm1 == norm2:
             return True
-
-        # Define common variations and abbreviations
-        variations = {
-            "ml": ["machine learning", "deep learning", "neural networks", "ai", "artificial intelligence", "machine learning engineer", "ml engineer"],
-            "ai": ["artificial intelligence", "machine learning", "deep learning", "neural networks", "ml", "ai engineer"],
-            "python": ["py", "python3", "python2", "python developer", "python programming"],
-            "javascript": ["js", "ecmascript", "node", "nodejs", "javascript developer"],
-            "typescript": ["ts", "typescript developer"],
-            "java": ["j2ee", "jvm", "spring", "java developer", "java programming"],
-            "c++": ["cpp", "cplusplus", "c plus plus"],
-            "react": ["reactjs", "react.js", "react native", "react developer"],
-            "node": ["nodejs", "node.js", "node developer"],
-            "aws": ["amazon web services", "cloud", "aws cloud", "aws developer"],
-            "devops": ["devsecops", "dev ops", "development operations", "devops engineer"],
-            "machine learning": ["ml", "deep learning", "neural networks", "ai", "artificial intelligence", "machine learning engineer"],
-            "deep learning": ["ml", "machine learning", "neural networks", "ai", "deep learning engineer"],
-            "neural networks": ["ml", "deep learning", "machine learning", "ai", "neural network engineer"],
-            "artificial intelligence": ["ai", "ml", "machine learning", "artificial intelligence engineer"],
-            "frontend": ["front-end", "front end", "frontend developer", "ui developer"],
-            "backend": ["back-end", "back end", "backend developer", "server-side"],
-            "fullstack": ["full-stack", "full stack", "fullstack developer"],
-            "database": ["db", "rdbms", "sql", "database developer"],
-            "kubernetes": ["k8s", "container orchestration", "kubernetes engineer"],
-            "docker": ["containerization", "containers", "docker container", "docker engineer"],
-            "pytorch": ["torch", "pytorch developer", "deep learning", "ml", "machine learning"],
-            "tensorflow": ["tf", "tensorflow developer", "deep learning", "ml", "machine learning"]
-        }
-
-        # Check if either skill has variations and if the other skill matches any of them
-        for base_skill, skill_variations in variations.items():
-            # Check if skill1 is the base skill and skill2 matches any variation
-            if skill1 == base_skill and (skill2 in skill_variations or any(var in skill2 for var in skill_variations)):
-                return True
-            # Check if skill2 is the base skill and skill1 matches any variation
-            if skill2 == base_skill and (skill1 in skill_variations or any(var in skill1 for var in skill_variations)):
-                return True
-            # Check if both skills are variations of the same base skill
-            if (skill1 in skill_variations or any(var in skill1 for var in skill_variations)) and \
-               (skill2 in skill_variations or any(var in skill2 for var in skill_variations)):
-                return True
-
-        # Check for substring matches (e.g., "python" in "python developer")
-        if skill1 in skill2 or skill2 in skill1:
-            return True
-
-        # Check for common patterns
-        common_patterns = {
-            "developer": ["dev", "engineer", "programmer"],
-            "engineer": ["developer", "engineering"],
-            "analyst": ["analytics", "analysis"],
-            "architecture": ["architect", "architectural"],
-            "management": ["manager", "managing"],
-            "design": ["designer", "designing"]
-        }
-
-        # Extract base words (remove common suffixes)
-        skill1_base = skill1.split()[0] if " " in skill1 else skill1
-        skill2_base = skill2.split()[0] if " " in skill2 else skill2
-
-        # Check if the base words match and the variations are just different role descriptions
-        if skill1_base == skill2_base:
-            return True
-
-        # Check common patterns
-        for pattern, variations in common_patterns.items():
-            if (pattern in skill1 and any(var in skill2 for var in variations)) or \
-               (pattern in skill2 and any(var in skill1 for var in variations)):
-                return True
-
-        return False
+            
+        # Check if they belong to the same variation cluster
+        variations1 = self.skill_normalizer.find_variations(skill1)
+        variations2 = self.skill_normalizer.find_variations(skill2)
+        
+        # Check for any overlap in variations
+        return bool(set(variations1) & set(variations2))
