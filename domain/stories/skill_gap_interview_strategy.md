@@ -258,7 +258,7 @@ questions = [
     {
         "type": str,  # "technical" or "behavioral"
         "question": str,
-        "expected_answer": str,
+        "expected_signals": List[str],
         "difficulty": str
     }
 ]

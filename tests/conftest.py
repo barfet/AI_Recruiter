@@ -39,6 +39,7 @@ async def recruiting_agent(mock_llm) -> AsyncGenerator[RecruitingAgent, None]:
 def sample_job_data() -> Dict:
     """Sample job posting data."""
     return {
+        "id": "test_job_1",
         "title": "Senior Software Engineer",
         "company": "TechCorp",
         "location": "Remote",
@@ -51,6 +52,7 @@ def sample_job_data() -> Dict:
 def sample_candidate_data() -> Dict:
     """Sample candidate data."""
     return {
+        "id": "test_resume_1",
         "name": "John Doe",
         "experience": [
             {

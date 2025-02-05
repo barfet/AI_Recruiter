@@ -38,6 +38,14 @@ class EmbeddingManager:
         self.data_dir = settings.DATA_DIR
         self.index_dir = settings.INDEXES_DIR
 
+    async def get_embedding(self, text: str) -> List[float]:
+        """Get embedding for a single text."""
+        try:
+            return self.embeddings.embed_query(text)
+        except Exception as e:
+            logger.error(f"Error getting embedding: {str(e)}")
+            raise EmbeddingError(f"Failed to get embedding: {str(e)}")
+
     def _prepare_job_text(self, job: JobPosting) -> str:
         """Prepare job posting text for embedding"""
         return f"""
@@ -194,20 +202,21 @@ class EmbeddingManager:
             logger.error(f"Error loading embeddings: {str(e)}")
             raise EmbeddingError(f"Failed to load embeddings: {str(e)}")
 
-    def similarity_search(
-        self, vectorstore: FAISS, query: str, k: int = 5
-    ) -> List[Dict[str, Any]]:
-        """Search for similar documents in the vector store"""
+    async def similarity_search(self, index, query: str, k: int = 5) -> List[Dict[str, Any]]:
+        """Perform similarity search on the index."""
         try:
-            results = vectorstore.similarity_search_with_score(query, k=k)
-            return [
-                {
-                    "document": result[0].page_content,
-                    "metadata": result[0].metadata,
-                    "score": result[1],
-                }
-                for result in results
-            ]
+            if not index:
+                logger.warning("No index provided for similarity search")
+                return []
+                
+            # Get query embedding
+            query_embedding = self.embeddings.embed_query(query)
+            
+            # Search the index
+            results = index.search(query_embedding, k=k)
+            
+            return results
+            
         except Exception as e:
-            logger.error(f"Error performing similarity search: {str(e)}")
-            raise EmbeddingError(f"Failed to perform similarity search: {str(e)}")
+            logger.error(f"Error in similarity search: {str(e)}")
+            return []

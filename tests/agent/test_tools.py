@@ -43,14 +43,20 @@ class TestSkillAnalysisTool:
         sample_candidate_data: Dict
     ) -> None:
         """Test skill matching functionality."""
-        result = await self.tool._arun("job_id:123 resume_id:456")
+        result = await self.tool._arun(
+            job_id="123",
+            resume_id="456",
+            analysis_type="match"
+        )
         result_dict = json.loads(result)
         
         assert result_dict["status"] == "success"
-        assert isinstance(result_dict["match_score"], float)
-        assert isinstance(result_dict["matching_skills"], list)
-        assert isinstance(result_dict["missing_skills"], list)
-        assert isinstance(result_dict["additional_skills"], list)
+        data = result_dict["data"]
+        assert isinstance(data["match_score"], float)
+        assert isinstance(data["exact_matches"], list)
+        assert isinstance(data["semantic_matches"], list)
+        assert isinstance(data["missing_skills"], list)
+        assert isinstance(data["additional_skills"], list)
         
     async def test_score_calculation(self) -> None:
         """Test score calculation logic."""
@@ -58,18 +64,18 @@ class TestSkillAnalysisTool:
         job_skills = ["Python", "AWS", "Docker"]
         candidate_skills = ["Python", "AWS", "Docker"]
         
-        score = self.tool._calculate_skill_score(job_skills, candidate_skills)
-        assert score == 1.0
+        scores = await self.tool._calculate_match_scores(job_skills, candidate_skills)
+        assert max(scores.values()) == 1.0
         
         # Test partial matches
         candidate_skills = ["Python", "AWS"]
-        score = self.tool._calculate_skill_score(job_skills, candidate_skills)
-        assert score >= 0.6  # Account for semantic matching
+        scores = await self.tool._calculate_match_scores(job_skills, candidate_skills)
+        assert max(scores.values()) >= 0.6  # Account for semantic matching
         
         # Test no matches
         candidate_skills = ["Java", "React"]
-        score = self.tool._calculate_skill_score(job_skills, candidate_skills)
-        assert score == 0.0
+        scores = await self.tool._calculate_match_scores(job_skills, candidate_skills)
+        assert max(scores.values()) == 0.0
         
     async def test_semantic_matching(self) -> None:
         """Test semantic matching capabilities."""
@@ -88,11 +94,15 @@ class TestSkillAnalysisTool:
             experience=[{"title": "ML Engineer", "duration": "2 years"}]
         )
         
-        result = await self.tool._arun("job_id:789 resume_id:101")
+        result = await self.tool._arun(
+            job_id="789",
+            resume_id="101",
+            analysis_type="match"
+        )
         result_dict = json.loads(result)
         
         assert result_dict["status"] == "success"
-        assert result_dict["match_score"] > 60  # Should recognize semantic similarities
+        assert result_dict["data"]["match_score"] > 60  # Should recognize semantic similarities
         
         # Cleanup
         await self.store.delete_job("789")
@@ -100,14 +110,18 @@ class TestSkillAnalysisTool:
         
     async def test_error_handling(self) -> None:
         """Test error handling scenarios."""
-        # Test with invalid input
-        result = await self.tool._arun("")
+        # Test with missing required fields
+        result = await self.tool._arun()
         result_dict = json.loads(result)
         assert result_dict["status"] == "error"
         assert "error" in result_dict
         
-        # Test with invalid format
-        result = await self.tool._arun("invalid_format")
+        # Test with invalid job/resume IDs
+        result = await self.tool._arun(
+            job_id="invalid",
+            resume_id="invalid",
+            analysis_type="match"
+        )
         result_dict = json.loads(result)
         assert result_dict["status"] == "error"
         assert "error" in result_dict 

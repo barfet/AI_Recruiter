@@ -21,7 +21,12 @@ class TestInterviewFlow(BaseIntegrationTest):
         
         assert len(questions) > 0
         assert all(q.get("type") in ["technical", "behavioral"] for q in questions)
-        assert all(q.get("question") and q.get("expected_answer") for q in questions)
+        assert all(
+            q.get("question") and  # question text
+            isinstance(q.get("expected_signals"), list) and  # expected signals must be a list
+            len(q.get("expected_signals")) > 0  # must have at least one signal
+            for q in questions
+        )
 
     async def test_response_evaluation(self) -> None:
         """Test candidate response evaluation."""
@@ -41,7 +46,7 @@ class TestInterviewFlow(BaseIntegrationTest):
             job_id=job["id"],
             question=question["question"],
             response="I would use AWS Lambda for serverless computing and Docker for containerization",
-            expected_answer=question["expected_answer"]
+            expected_signals=question["expected_signals"]
         )
         
         # Verify evaluation structure

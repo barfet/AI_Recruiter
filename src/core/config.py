@@ -1,7 +1,7 @@
 """Configuration settings for the application"""
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
@@ -33,8 +33,12 @@ class Settings(BaseSettings):
 
     # Model settings
     EMBEDDING_MODEL: str = "text-embedding-ada-002"
-    LLM_MODEL: str = "gpt-3.5-turbo"
-    LLM_TEMPERATURE: float = 0.0
+    LLM_MODEL: str = "gpt-4o-mini"
+    LLM_TEMPERATURE: float = 0.7 
+    LLM_CONFIG: Dict[str, Any] = {
+        "model": LLM_MODEL,
+        "temperature": LLM_TEMPERATURE
+    }
 
     # Vector search settings
     VECTOR_SIMILARITY_TOP_K: int = 5

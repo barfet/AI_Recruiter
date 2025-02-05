@@ -7,7 +7,7 @@ from langchain_community.vectorstores import Chroma
 from chromadb.utils import embedding_functions
 from src.core.logging import setup_logger
 import json
-from langchain_community.embeddings import SentenceTransformerEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 logger = setup_logger(__name__)
 
@@ -20,7 +20,7 @@ class ChromaStore:
         self.client = None
         self.jobs_collection = None
         self.candidates_collection = None
-        self.embedding_model = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+        self.embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         self._initialize()
 
     def _initialize(self) -> None:
@@ -80,6 +80,7 @@ class ChromaStore:
         title: str,
         description: str,
         skills: List[str],
+        embedding: Optional[List[float]] = None,
         **kwargs: Any
     ) -> None:
         """Add a job to the vector store."""
@@ -97,11 +98,19 @@ class ChromaStore:
                 **kwargs
             }
             
-            self.jobs_collection.add(
-                documents=[document],
-                metadatas=[metadata],
-                ids=[job_id]
-            )
+            if embedding is not None:
+                self.jobs_collection.add(
+                    documents=[document],
+                    metadatas=[metadata],
+                    ids=[job_id],
+                    embeddings=[embedding]
+                )
+            else:
+                self.jobs_collection.add(
+                    documents=[document],
+                    metadatas=[metadata],
+                    ids=[job_id]
+                )
             logger.info(f"Successfully added job {job_id}")
         except Exception as e:
             logger.error(f"Error adding job {job_id}: {str(e)}")
@@ -112,31 +121,39 @@ class ChromaStore:
         resume_id: str,
         name: str,
         skills: List[str],
-        experience: List[Dict],
+        experience: str,
+        embedding: Optional[List[float]] = None,
         **kwargs: Any
     ) -> None:
         """Add a candidate to the vector store."""
         try:
             document = f"""
-            Experience: {json.dumps(experience)}
+            Name: {name}
+            Experience: {experience}
             Skills: {', '.join(skills)}
-            Education: {kwargs.get('education', '')}
-            Industry: {kwargs.get('industry', '')}
             """
             
             metadata = {
                 "resume_id": resume_id,
                 "name": name,
                 "skills": json.dumps(skills),  # Store as JSON string
-                "experience": json.dumps(experience),
+                "experience": experience,
                 **{k: str(v) if isinstance(v, (list, dict)) else v for k, v in kwargs.items()}
             }
             
-            self.candidates_collection.add(
-                documents=[document],
-                metadatas=[metadata],
-                ids=[resume_id]
-            )
+            if embedding is not None:
+                self.candidates_collection.add(
+                    documents=[document],
+                    metadatas=[metadata],
+                    ids=[resume_id],
+                    embeddings=[embedding]
+                )
+            else:
+                self.candidates_collection.add(
+                    documents=[document],
+                    metadatas=[metadata],
+                    ids=[resume_id]
+                )
             logger.info(f"Successfully added candidate {resume_id}")
         except Exception as e:
             logger.error(f"Error adding candidate {resume_id}: {str(e)}")
@@ -252,35 +269,27 @@ class ChromaStore:
                     # Convert distance to similarity score (0-1)
                     similarity = 1 - (distance / 2) if distance is not None else 0
                     
-                    # Ensure we have the job_id in the metadata
-                    if "job_id" not in metadata:
-                        metadata["job_id"] = job_id
-                    
-                    # Convert skills from JSON string to list if needed
+                    # Convert skills from JSON string to list
                     if "skills" in metadata:
                         try:
-                            if isinstance(metadata["skills"], str):
-                                try:
-                                    metadata["skills"] = json.loads(metadata["skills"])
-                                except json.JSONDecodeError:
-                                    metadata["skills"] = [s.strip() for s in metadata["skills"].split(",")]
-                        except Exception as e:
-                            logger.error(f"Error parsing skills for job {job_id}: {str(e)}")
+                            metadata["skills"] = json.loads(metadata["skills"])
+                        except json.JSONDecodeError:
                             metadata["skills"] = []
                     
                     jobs.append({
                         "id": job_id,
-                        "job_id": metadata.get("job_id", job_id),
-                        "title": metadata.get("title", ""),
-                        "description": metadata.get("description", ""),
-                        "skills": metadata.get("skills", []),
-                        "metadata": metadata,
                         "document": document,
+                        "metadata": metadata,
                         "score": similarity
                     })
                 except Exception as e:
                     logger.error(f"Error processing job {job_id}: {str(e)}")
                     continue
+            
+            # Sort by ID match if query looks like an ID
+            if query.startswith("job_id:"):
+                job_id = query.split(":")[1].strip()
+                jobs.sort(key=lambda x: x["id"] == job_id, reverse=True)
             
             return jobs
             

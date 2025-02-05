@@ -1,8 +1,9 @@
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 import json
+import logging
+from datetime import datetime
 
-from src.agent.tools import extract_skills
 from src.services.skill_normalization import SkillNormalizer
 from src.vector_store.chroma_store import ChromaStore
 from src.data.managers.job import JobManager
@@ -35,7 +36,7 @@ class JobDiscoveryService:
         self.store = store
         self.skill_matcher = SkillMatcher()
         self.skill_normalizer = SkillNormalizer()
-        self.agent = RecruitingAgent(model_name="gpt-3.5-turbo")
+        self.agent = RecruitingAgent()
         self.match_chain = CandidateJobMatchChain()
         
         # Build initial skill clusters from known variations
@@ -205,6 +206,7 @@ class JobDiscoveryService:
     ) -> List[JobMatch]:
         """Find matching jobs for a candidate profile."""
         try:
+            skill_normalizer = SkillNormalizer()
             # Use the agent to find relevant jobs
             query = f"Find jobs matching a candidate with experience: {' '.join(candidate_profile['experience'])} and skills: {', '.join(candidate_profile['skills'])}"
             jobs_response = await self.agent.run(query)
@@ -258,7 +260,7 @@ class JobDiscoveryService:
                     elif not job_skills:  # If empty list or None
                         # Extract skills from description and requirements
                         text_to_analyze = f"{job_data.get('description', '')} {job_data.get('requirements', '')}"
-                        job_skills = extract_skills(text_to_analyze)
+                        job_skills = skill_normalizer.extract_skills(text_to_analyze)
                     
                     # Calculate skill match
                     matching_skills, missing_skills, skill_score = self._calculate_skill_match(

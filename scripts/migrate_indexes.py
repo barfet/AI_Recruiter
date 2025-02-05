@@ -2,13 +2,14 @@ import asyncio
 import pickle
 import faiss
 import json
+import logging
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 
 from src.vector_store.chroma_store import ChromaStore
 from src.core.logging import setup_logger
-from src.agent.tools import extract_skills
 from src.embeddings.manager import EmbeddingManager
+from src.services.skill_normalization import SkillNormalizer
 
 logger = setup_logger(__name__)
 
@@ -41,45 +42,27 @@ def clean_metadata(data: Dict) -> Dict:
             cleaned[key] = str(value)
     return cleaned
 
-async def migrate_jobs(store: ChromaStore):
-    """Migrate jobs from FAISS to ChromaDB."""
-    logger.info("Starting jobs migration...")
+async def migrate_jobs(store: ChromaStore, data_path: Path) -> None:
+    """Migrate job data to the new format."""
+    skill_normalizer = SkillNormalizer()
     
-    try:
-        # Load FAISS index
-        embedding_manager = EmbeddingManager()
-        jobs_store = embedding_manager.load_embeddings("jobs")
+    with open(data_path / "jobs.json") as f:
+        jobs = json.load(f)
+    
+    for job in jobs:
+        # Extract and normalize skills
+        skills = skill_normalizer.extract_skills(job["description"])
+        job["skills"] = skills
         
-        if not jobs_store:
-            logger.error("No jobs index found")
-            return
-            
-        logger.info(f"Loaded jobs index with {len(jobs_store.docstore._dict)} entries")
+        # Add to store
+        await store.add_job(
+            job_id=job["id"],
+            title=job["title"],
+            description=job["description"],
+            skills=skills
+        )
         
-        # Migrate each job
-        for i, (doc_id, doc) in enumerate(jobs_store.docstore._dict.items()):
-            try:
-                job_data = doc.metadata
-                
-                # Extract skills if not present
-                if not job_data.get("skills"):
-                    text_to_analyze = f"{job_data.get('description', '')} {job_data.get('requirements', '')}"
-                    job_data["skills"] = extract_skills(text_to_analyze)
-                
-                # Add to ChromaDB
-                await store.add_job(
-                    job_id=doc_id,
-                    job_data=job_data
-                )
-                logger.info(f"Migrated job {i}: {job_data.get('title', '')}")
-            except Exception as e:
-                logger.error(f"Error migrating job {i}: {str(e)}")
-                continue
-                
-        logger.info("Jobs migration completed")
-    except Exception as e:
-        logger.error(f"Error in jobs migration: {str(e)}")
-        raise
+    logger.info(f"Migrated {len(jobs)} jobs")
 
 async def migrate_candidates(store: ChromaStore):
     """Migrate candidates from FAISS to ChromaDB."""
@@ -129,7 +112,7 @@ async def main():
         # Initialize ChromaDB
         async with ChromaStore(persist_directory=".chroma", is_persistent=True) as store:
             # Migrate jobs first
-            await migrate_jobs(store)
+            await migrate_jobs(store, Path("data"))
             
             # Then migrate candidates
             await migrate_candidates(store)

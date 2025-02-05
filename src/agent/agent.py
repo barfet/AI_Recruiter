@@ -1,25 +1,31 @@
-from langchain_openai import ChatOpenAI
-from langchain.agents import AgentExecutor, create_openai_functions_agent
-from langchain.memory import ConversationBufferMemory
-from langchain.prompts import MessagesPlaceholder, ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate, PromptTemplate
-from langchain.tools import Tool
-from langchain_core.messages import AIMessage, HumanMessage
-from typing import Dict, Any, Optional, List
-from pydantic import BaseModel, Field
-from langchain.chains import LLMChain
+"""Agent for recruiting tasks."""
+
 import json
+import logging
+from typing import Dict, Any, Optional, List
+
+from langchain_openai import ChatOpenAI
+from langchain.agents import AgentExecutor
+from langchain.agents.format_scratchpad import format_to_openai_function_messages
+from langchain.agents.output_parsers import OpenAIFunctionsAgentOutputParser
+from langchain.memory import ConversationBufferMemory
+from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate, PromptTemplate
+from langchain_core.tools import Tool
+from langchain_core.messages import AIMessage, HumanMessage
+from pydantic import BaseModel, Field
 
 from src.core.logging import setup_logger
-from src.agent.tools import (
-    SearchJobsTool,
-    SearchCandidatesTool,
-    MatchJobCandidatesTool,
-    SkillAnalysisTool,
-    InterviewQuestionGenerator,
+from src.agent.tools.search import JobSearchTool, CandidateSearchTool
+from src.agent.tools.analysis import SkillAnalysisTool
+from src.agent.tools.interview import (
+    InterviewQuestionTool,
+    ResponseEvaluationTool,
+    FeedbackGenerationTool
 )
 from src.agent.chains import CandidateJobMatchChain, InterviewWorkflowChain
 from src.core.config import settings
 from src.vector_store.chroma_store import ChromaStore
+from langchain.chains import LLMChain
 
 logger = setup_logger(__name__)
 
@@ -32,16 +38,14 @@ class AgentOutput(BaseModel):
 class RecruitingAgent:
     """Agent for handling recruiting tasks"""
 
-    def __init__(self, model_name: str = "gpt-3.5-turbo") -> None:
+    def __init__(self) -> None:
         """Initialize the recruiting agent."""
-        self.llm = ChatOpenAI(
-            model_name=model_name,
-            temperature=0.7
-        )
+        self.llm = ChatOpenAI(**settings.LLM_CONFIG)
         self.memory = ConversationBufferMemory()
         self.store = ChromaStore()
+        self.logger = logging.getLogger(__name__)
         
-        # Initialize chains
+        # Initialize specialized chains
         self.question_chain = LLMChain(
             llm=self.llm,
             prompt=PromptTemplate(
@@ -61,64 +65,96 @@ class RecruitingAgent:
         self.evaluation_chain = LLMChain(
             llm=self.llm,
             prompt=PromptTemplate(
-                input_variables=["question", "response", "job_requirements"],
-                template="""Evaluate the following interview response based on the job requirements:
+                input_variables=["candidate_response", "job_requirements", "question"],
+                template="""Evaluate the candidate's response against the job requirements:
                 
-                Question: {question}
-                Response: {response}
-                Job Requirements: {job_requirements}
+                Job Requirements:
+                {job_requirements}
                 
-                Provide a detailed evaluation including:
-                1. Score (0-100)
-                2. Key strengths demonstrated
-                3. Areas for improvement
-                4. Technical accuracy
-                5. Communication clarity
+                Question Asked:
+                {question}
                 
-                Format the response as a JSON object with these fields."""
+                Candidate's Response:
+                {candidate_response}
+                
+                Provide a detailed evaluation of how well the response demonstrates the required skills and experience.
+                Include specific strengths and areas for improvement."""
             )
         )
         
         self.feedback_chain = LLMChain(
             llm=self.llm,
             prompt=PromptTemplate(
-                input_variables=["job_requirements", "interview_data"],
-                template="""Generate comprehensive interview feedback based on the following data:
+                input_variables=["evaluation", "job_requirements"],
+                template="""Based on the evaluation and job requirements, provide constructive feedback:
+                
+                Evaluation:
+                {evaluation}
                 
                 Job Requirements:
                 {job_requirements}
                 
-                Interview Responses:
-                {interview_data}
-                
-                Provide detailed feedback including:
-                1. Overall assessment
-                2. Technical competency
-                3. Cultural fit
-                4. Key strengths
-                5. Areas for development
-                6. Hiring recommendation
-                
-                Format the response as a JSON object with these fields."""
+                Provide specific, actionable feedback that will help the candidate improve and better align with the role requirements."""
             )
         )
         
-        # Initialize tools
+        # Initialize tool instances
+        self.job_search = JobSearchTool()
+        self.candidate_search = CandidateSearchTool()
+        self.skill_analysis = SkillAnalysisTool()
+        self.question_generator = InterviewQuestionTool()
+        self.response_evaluator = ResponseEvaluationTool()
+        self.feedback_generator = FeedbackGenerationTool()
+        
+        # Initialize tools for agent
         self.tools = [
-            SearchJobsTool,
-            SearchCandidatesTool,
-            MatchJobCandidatesTool,
-            SkillAnalysisTool(),
-            InterviewQuestionGenerator,
+            Tool(
+                name="search_jobs",
+                description="Search for job postings using semantic search. Input should be a description of the job you're looking for.",
+                func=self.job_search._arun,
+                args_schema=self.job_search.args_schema
+            ),
+            Tool(
+                name="search_candidates",
+                description="Search for candidate profiles using semantic search. Input should be a description of the candidate you're looking for.",
+                func=self.candidate_search._arun,
+                args_schema=self.candidate_search.args_schema
+            ),
+            Tool(
+                name="analyze_skills",
+                description="Analyze skill match between a job and a candidate. Input should be a JSON string with job_id and resume_id.",
+                func=self.skill_analysis._arun,
+                args_schema=self.skill_analysis.args_schema
+            ),
+            Tool(
+                name="generate_interview_questions",
+                description="Generate interview questions based on job requirements. Input should be a JSON string with job_id and optional resume_id.",
+                func=self.question_generator._arun,
+                args_schema=self.question_generator.args_schema
+            ),
+            Tool(
+                name="evaluate_response",
+                description="Evaluate a candidate's response to an interview question. Input should be a JSON string with resume_id, job_id, response, and question.",
+                func=self.response_evaluator._arun,
+                args_schema=self.response_evaluator.args_schema
+            ),
+            Tool(
+                name="generate_feedback",
+                description="Generate comprehensive interview feedback. Input should be a JSON string with job_id, resume_id, responses, and evaluations.",
+                func=self.feedback_generator._arun,
+                args_schema=self.feedback_generator.args_schema
+            ),
             Tool(
                 name="detailed_match_analysis",
+                description="Perform a detailed match analysis between a candidate and a job. Input should be job_id and resume_id separated by space.",
                 func=self._run_match_analysis,
-                description="Perform a detailed match analysis between a candidate and a job. Input should be job_id and resume_id separated by space."
+                args_schema=self.skill_analysis.args_schema
             ),
             Tool(
                 name="full_interview_workflow",
+                description="Run a complete interview workflow including question generation and evaluation. Input should be job_id and resume_id separated by space.",
                 func=self._run_interview_workflow,
-                description="Run a complete interview workflow including question generation and evaluation. Input should be job_id and resume_id separated by space."
+                args_schema=self.question_generator.args_schema
             )
         ]
 
@@ -181,14 +217,14 @@ class RecruitingAgent:
             MessagesPlaceholder(variable_name="agent_scratchpad"),
         ])
 
-        self.agent = create_openai_functions_agent(
-            llm=self.llm,
-            tools=self.tools,
-            prompt=prompt
-        )
+        agent = {
+            "input": lambda x: x["input"],
+            "chat_history": lambda x: x.get("chat_history", []),
+            "agent_scratchpad": lambda x: format_to_openai_function_messages(x["intermediate_steps"]),
+        } | prompt | self.llm.bind(functions=[t.dict() for t in self.tools]) | OpenAIFunctionsAgentOutputParser()
 
-        self.agent_executor = AgentExecutor.from_agent_and_tools(
-            agent=self.agent,
+        self.agent_executor = AgentExecutor(
+            agent=agent,
             tools=self.tools,
             memory=self.memory,
             verbose=True,
@@ -198,83 +234,59 @@ class RecruitingAgent:
         )
 
     async def _run_match_analysis(self, input_str: str) -> str:
-        """Run detailed match analysis"""
+        """Run a detailed match analysis between a job and a candidate."""
         try:
             job_id, resume_id = input_str.split()
-            # Get job and candidate info
-            job_info = await self.tools[0].func(f"job_id:{job_id}")
-            candidate_info = await self.tools[1].func(f"resume_id:{resume_id}")
             
-            # Run the match chain
-            result = await self.match_chain.run(
-                candidate_info=candidate_info,
-                job_info=job_info
-            )
+            # Get job requirements using skill analysis tool
+            job_data = await self.skill_analysis._arun({
+                "job_id": job_id,
+                "resume_id": resume_id,
+                "analysis_type": "requirements"
+            })
             
-            return f"""
-            DETAILED MATCH ANALYSIS
-            ----------------------
-            {result['candidate_summary']}
+            # Analyze skills
+            skill_analysis = await self.skill_analysis._arun({
+                "job_id": job_id,
+                "resume_id": resume_id,
+                "analysis_type": "match"
+            })
             
-            JOB REQUIREMENTS
-            ---------------
-            {result['job_analysis']}
-            
-            SKILLS GAP ANALYSIS
-            ------------------
-            {result['skills_gap_analysis']}
-            
-            INTERVIEW STRATEGY
-            -----------------
-            {result['interview_strategy']}
-            """
+            return json.dumps({
+                "job_data": json.loads(job_data),
+                "skill_analysis": json.loads(skill_analysis)
+            }, indent=2)
         except Exception as e:
             logger.error(f"Error in match analysis: {str(e)}")
-            return f"Error performing match analysis: {str(e)}"
+            return f"Error: {str(e)}"
 
     async def _run_interview_workflow(self, input_str: str) -> str:
-        """Run complete interview workflow"""
+        """Run a complete interview workflow."""
         try:
-            parts = input_str.split()
-            job_id = parts[0]
-            resume_id = parts[1] if len(parts) > 1 else None
+            job_id, resume_id = input_str.split()
             
-            # Get job and candidate info
-            job_info = await self.tools[0].func(f"job_id:{job_id}")
-            candidate_info = await self.tools[1].func(f"resume_id:{resume_id}") if resume_id else ""
+            # Get job requirements
+            job_data = await self.skill_analysis._arun({
+                "job_id": job_id,
+                "resume_id": resume_id,
+                "analysis_type": "requirements"
+            })
+            job_data = json.loads(job_data)
             
             # Generate questions
-            focus_areas = ["Technical Skills", "Problem Solving", "Experience", "Culture Fit"]
-            questions_result = await self.interview_chain.generate_questions(
-                job_info=job_info,
-                candidate_info=candidate_info,
-                focus_areas=focus_areas
-            )
+            questions = await self.question_generator._arun({
+                "job_id": job_id,
+                "phase": "technical",
+                "focus_skills": job_data.get("skills", [])
+            })
             
-            return f"""
-            INTERVIEW WORKFLOW PLAN
-            ---------------------
-            {questions_result['interview_questions']}
-            
-            Note: Use these questions as a guide for the interview.
-            After each response, use the evaluate_response function to assess the answer.
-            """
+            return json.dumps({
+                "job_data": job_data,
+                "questions": json.loads(questions)
+            }, indent=2)
         except Exception as e:
             logger.error(f"Error in interview workflow: {str(e)}")
-            return f"Error setting up interview workflow: {str(e)}"
-
-    async def run(self, query: str) -> str:
-        """Run the agent with the given query"""
-        try:
-            response = await self.agent_executor.ainvoke({"input": query})
-            return response.get("output", "No response generated")
-        except Exception as e:
-            logger.error(f"Error running agent: {str(e)}")
-            return f"I encountered an error: {str(e)}"
-
-    def reset_memory(self) -> None:
-        """Reset the agent's memory"""
-        self.memory.clear()
+            return f"Error: {str(e)}"
 
     async def generate_interview_questions(
         self,
@@ -283,180 +295,120 @@ class RecruitingAgent:
     ) -> List[Dict[str, str]]:
         """Generate interview questions based on job requirements."""
         try:
-            # Get job details
-            job = await self.store.get_job_by_id(job_id)
-            if not job:
-                raise ValueError(f"Job with ID {job_id} not found")
+            # Get job data first
+            job_result = await self.job_search._arun({"query": f"id:{job_id}", "limit": 1})
+            job_data = json.loads(job_result)
+            
+            if not job_data.get("data"):
+                raise ValueError(f"No job found with ID: {job_id}")
+            
+            job = job_data["data"][0] if isinstance(job_data["data"], list) else job_data["data"]
+            
+            # Extract requirements and skills
+            requirements = {
+                "title": job.get("title", ""),
+                "description": job.get("description", ""),
+                "skills": job.get("skills", []),
+                "experience": job.get("experience", "")
+            }
+            
+            all_questions = []
+            for question_type in question_types:
+                # Use question chain with updated prompt
+                result = await self.question_chain.ainvoke({
+                    "job_requirements": json.dumps(requirements, indent=2),
+                    "question_types": question_type
+                })
                 
-            # Prepare job requirements
-            requirements = f"""
-            Title: {job.get('title', '')}
-            Skills: {', '.join(job.get('skills', []))}
-            Description: {job.get('description', '')}
-            """
+                # Parse questions from result
+                try:
+                    questions = json.loads(result["text"])
+                    if isinstance(questions, list):
+                        all_questions.extend(questions)
+                    elif isinstance(questions, dict):
+                        all_questions.append(questions)
+                except (json.JSONDecodeError, KeyError):
+                    # If not JSON, try to parse as text
+                    questions = result["text"].split("\n")
+                    questions = [q.strip() for q in questions if q.strip()]
+                    all_questions.extend([{"question": q} for q in questions])
             
-            # Generate questions
-            response = await self.question_chain.arun(
-                job_requirements=requirements,
-                question_types=", ".join(question_types)
-            )
-            
-            # Parse response into structured questions
-            questions = []
-            current_type = question_types[0]  # Default to first type
-            
-            for line in response.split("\n"):
-                line = line.strip()
-                if not line:
-                    continue
-                    
-                # Check if line indicates question type
-                if any(qt.lower() in line.lower() for qt in question_types):
-                    current_type = next(qt for qt in question_types if qt.lower() in line.lower())
-                    continue
-                    
-                # Parse question if it starts with a number
-                if any(c.isdigit() for c in line):
-                    # Remove leading number and dot
-                    question_text = line.lstrip("0123456789. ")
-                    questions.append({
-                        "type": current_type,
-                        "question": question_text,
-                        "expected_answer": "Candidate should demonstrate relevant knowledge and experience"
-                    })
-            
-            return questions
+            return all_questions
             
         except Exception as e:
-            logger.error(f"Error generating interview questions: {str(e)}")
-            raise
-    
+            self.logger.error(f"Error generating interview questions: {str(e)}")
+            return []
+
+    async def run(self, input_str: str) -> AgentOutput:
+        """Run the agent with the given input."""
+        try:
+            result = await self.agent_executor.ainvoke({"input": input_str})
+            return AgentOutput(output=result["output"])
+        except Exception as e:
+            logger.error(f"Error running agent: {str(e)}")
+            return AgentOutput(output=f"Error: {str(e)}")
+
+    def reset_memory(self) -> None:
+        """Reset the agent's memory"""
+        self.memory.clear()
+
     async def evaluate_response(
         self,
         job_id: str,
         question: str,
         response: str,
-        expected_answer: Optional[str] = None
+        expected_signals: List[str] | None = None,
     ) -> Dict[str, Any]:
-        """Evaluate a candidate's interview response."""
+        """Evaluate a candidate's response to an interview question."""
         try:
-            # Get job details
-            job = await self.store.get_job_by_id(job_id)
-            if not job:
-                raise ValueError(f"Job with ID {job_id} not found")
+            evaluation = await self.response_evaluator._arun({
+                "job_id": job_id,
+                "question": question,
+                "response": response,
+                "expected_signals": expected_signals or []
+            })
+            
+            return json.loads(evaluation)
+
+        except Exception as e:
+            self.logger.error(f"Error evaluating response: {str(e)}")
+            return {
+                "score": 0,
+                "strengths": [],
+                "improvements": [],
+                "technical_accuracy": 0,
+                "communication": 0
+            }
+    
+    async def generate_interview_feedback(self, interview_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate comprehensive feedback for an interview."""
+        try:
+            feedback = await self.feedback_generator._arun({
+                "job_id": interview_data["job_id"],
+                "resume_id": interview_data.get("resume_id"),
+                "responses": interview_data["responses"],
+                "evaluations": interview_data.get("evaluations", {})
+            })
+            
+            result = json.loads(feedback)
+            
+            # Ensure required fields are present
+            if not result.get("overall_score"):
+                scores = [r.get("score", 0) for r in interview_data.get("evaluations", {}).values()]
+                result["overall_score"] = sum(scores) / len(scores) if scores else 0
                 
-            # Prepare job requirements
-            requirements = f"""
-            Title: {job.get('title', '')}
-            Skills: {', '.join(job.get('skills', []))}
-            Description: {job.get('description', '')}
-            """
-            
-            # Add expected answer if provided
-            if expected_answer:
-                requirements += f"\nExpected Answer: {expected_answer}"
-            
-            # Evaluate response
-            result = await self.evaluation_chain.arun(
-                question=question,
-                response=response,
-                job_requirements=requirements
-            )
-            
-            # Parse result into structured format
-            if isinstance(result, str):
-                try:
-                    result = json.loads(result)
-                except json.JSONDecodeError:
-                    # Convert string result to structured format
-                    result = {
-                        "score": 0,
-                        "strengths": [],
-                        "improvements": [],
-                        "technical_accuracy": "Poor",
-                        "communication": "Poor"
-                    }
-            
-            # Ensure all required fields are present
-            if "Score" in result:
-                result["score"] = result.pop("Score")
-            if "Key strengths demonstrated" in result:
-                result["strengths"] = result.pop("Key strengths demonstrated")
-            if "Areas for improvement" in result:
-                result["improvements"] = result.pop("Areas for improvement")
-            if "Communication clarity" in result:
-                result["communication"] = result.pop("Communication clarity")
-            
-            # Add missing fields with defaults if needed
-            result.setdefault("score", 0)
-            result.setdefault("strengths", [])
-            result.setdefault("improvements", [])
-            result.setdefault("technical_accuracy", "Poor")
-            result.setdefault("communication", "Poor")
-            
-            # Ensure score is a number between 0 and 100
-            if isinstance(result["score"], str):
-                try:
-                    result["score"] = float(result["score"].rstrip("%"))
-                except (ValueError, AttributeError):
-                    result["score"] = 0
+            if not result.get("Key strengths"):
+                result["Key strengths"] = ["No specific strengths identified"]
+            if not result.get("Areas for development"):
+                result["Areas for development"] = ["No specific areas for development identified"]
             
             return result
-            
+
         except Exception as e:
-            logger.error(f"Error evaluating response: {str(e)}")
-            raise
-    
-    async def generate_interview_feedback(
-        self,
-        interview_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Generate comprehensive interview feedback."""
-        try:
-            # Get job details
-            job = await self.store.get_job_by_id(interview_data["job_id"])
-            if not job:
-                raise ValueError(f"Job with ID {interview_data['job_id']} not found")
-                
-            # Prepare job requirements
-            requirements = f"""
-            Title: {job.get('title', '')}
-            Skills: {', '.join(job.get('skills', []))}
-            Description: {job.get('description', '')}
-            """
-            
-            # Calculate overall score from responses
-            response_scores = [r.get("score", 0) for r in interview_data["responses"]]
-            overall_score = sum(response_scores) / len(response_scores) if response_scores else 0
-            
-            # Generate feedback
-            feedback_str = await self.feedback_chain.arun(
-                job_requirements=requirements,
-                interview_data=str(interview_data["responses"])
-            )
-            
-            # Parse feedback and ensure proper structure
-            try:
-                feedback = json.loads(feedback_str)
-            except json.JSONDecodeError:
-                # If feedback is a string, convert it to structured format
-                feedback = {
-                    "Key strengths": [],
-                    "Areas for development": [],
-                    "Hiring recommendation": "Not recommended"
-                }
-            
-            # Ensure Key strengths is a list
-            if "Key strengths" in feedback and not isinstance(feedback["Key strengths"], list):
-                feedback["Key strengths"] = [feedback["Key strengths"]]
-            elif "Key strengths" not in feedback:
-                feedback["Key strengths"] = []
-            
-            # Add overall score
-            feedback["overall_score"] = overall_score
-            
-            return feedback
-            
-        except Exception as e:
-            logger.error(f"Error generating interview feedback: {str(e)}")
-            raise
+            self.logger.error(f"Error generating feedback: {str(e)}")
+            return {
+                "overall_score": 0,
+                "Key strengths": ["Unable to identify strengths due to processing error"],
+                "Areas for development": ["Unable to identify areas for development due to processing error"],
+                "Hiring recommendation": "Not recommended"
+            }

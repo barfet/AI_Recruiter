@@ -26,9 +26,9 @@ logger = setup_logger(__name__)
 class CandidateJobMatchChain:
     """Chain for comprehensive candidate-job matching analysis"""
 
-    def __init__(self, model_name: str = "gpt-3.5-turbo"):
+    def __init__(self):
         """Initialize the chain."""
-        self.llm = ChatOpenAI(model_name=model_name)
+        self.llm = ChatOpenAI(**settings.LLM_CONFIG)
         
         # Matching prompt
         self.match_prompt = ChatPromptTemplate.from_template(
@@ -82,9 +82,9 @@ class CandidateJobMatchChain:
 class InterviewWorkflowChain:
     """Chain for managing the interview process workflow"""
 
-    def __init__(self, model_name: str = "gpt-3.5-turbo"):
+    def __init__(self):
         """Initialize the chain."""
-        self.llm = ChatOpenAI(model_name=model_name)
+        self.llm = ChatOpenAI(**settings.LLM_CONFIG)
         
         # Question generation prompt
         self.question_prompt = ChatPromptTemplate.from_template(
