@@ -5,11 +5,8 @@ class InterviewQuestion(BaseModel):
     """Model representing a single interview question."""
     
     text: str = Field(..., description="The actual question text")
-    difficulty: str = Field(..., description="Question difficulty level")
-    expected_signals: List[str] = Field(
-        ..., 
-        description="Signals/indicators to look for in the answer"
-    )
+    difficulty: str = Field(..., description="Question difficulty level (easy/medium/hard)")
+    expected_signals: List[str] = Field(..., description="Expected positive signals in the answer")
 
     @validator("difficulty")
     def validate_difficulty(cls, v):
@@ -41,35 +38,18 @@ class InterviewFeedback(BaseModel):
 class InterviewPhase(BaseModel):
     """Model representing a single phase of the interview."""
     
-    priority: int = Field(..., description="Priority order of this phase")
+    priority: int = Field(..., description="Priority order of this phase (1 being highest)")
     skill_focus: str = Field(..., description="The skill being assessed in this phase")
     reason: str = Field(..., description="Reason for including this phase")
-    time_allocation: int = Field(
-        ..., 
-        description="Time allocated for this phase in minutes",
-        ge=10
-    )
-    questions: List[InterviewQuestion] = Field(
-        ..., 
-        description="List of questions for this phase"
-    )
+    time_allocation: int = Field(..., description="Time allocated in minutes")
+    questions: List[InterviewQuestion] = Field(..., description="Questions for this phase")
 
 class InterviewStrategy(BaseModel):
     """Model representing the complete interview strategy."""
     
-    total_time: int = Field(
-        ..., 
-        description="Total interview duration in minutes",
-        ge=30
-    )
-    phases: List[InterviewPhase] = Field(
-        ..., 
-        description="Ordered list of interview phases"
-    )
-    notes: Optional[str] = Field(
-        None, 
-        description="Additional notes or guidance for the interviewer"
-    )
+    total_time: int = Field(..., description="Total interview duration in minutes")
+    phases: List[InterviewPhase] = Field(..., description="Ordered list of interview phases")
+    notes: Optional[str] = Field(None, description="Additional notes or guidance for the interviewer")
 
     @validator("phases")
     def validate_phases(cls, v, values):
