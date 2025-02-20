@@ -175,6 +175,6 @@ MIT License - see LICENSE file for details
 
 ## 🔗 Links
 
-- [Technical Architecture](docs/architecture.md)
-- [API Documentation](docs/api.md)
-- [Development Guide](docs/development.md)
+- [Project Plan](docs/project_plan.md)
+- [Product Requirements Document](docs/product_requirements_document.md)
+- [Architecture and Tech Overview](docs/architecture_and_tech_overview.md)
