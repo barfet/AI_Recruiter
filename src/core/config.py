@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
+from enum import Enum
+from pydantic import Field
 
 # Load environment variables from .env file
 load_dotenv(override=True)
@@ -64,3 +66,94 @@ settings.PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 settings.INDEXES_DIR.mkdir(parents=True, exist_ok=True)
 settings.JOB_POSTINGS_DIR.mkdir(parents=True, exist_ok=True)
 settings.RESUME_DIR.mkdir(parents=True, exist_ok=True)
+
+
+class VectorStoreType(str, Enum):
+    """Supported vector store backends."""
+    FAISS = "faiss"
+    CHROMA = "chroma"
+
+class EmbeddingConfig(BaseSettings):
+    """Configuration for embedding models and parameters."""
+    
+    # Model configuration
+    MODEL_NAME: str = "all-MiniLM-L6-v2"
+    BATCH_SIZE: int = 32
+    MAX_LENGTH: int = 512
+    DEVICE: str = "cpu"  # or "cuda" for GPU
+    
+    # Dimension of embeddings
+    EMBEDDING_DIM: int = 384  # matches all-MiniLM-L6-v2
+    
+    # Cache settings
+    CACHE_DIR: str = ".cache/embeddings"
+    USE_CACHE: bool = True
+
+class VectorStoreConfig(BaseSettings):
+    """Configuration for vector stores."""
+    
+    # Vector store type
+    STORE_TYPE: VectorStoreType = VectorStoreType.CHROMA
+    
+    # Common settings
+    PERSIST_DIRECTORY: str = ".data/vector_store"
+    
+    # FAISS specific settings
+    FAISS_INDEX_TYPE: str = "Flat"  # or "IVF", "HNSW" etc.
+    FAISS_METRIC_TYPE: str = "cosine"  # or "l2", "inner_product"
+    
+    # Chroma specific settings
+    CHROMA_COLLECTION_NAME: str = "ai_recruiter"
+    CHROMA_PERSIST_DIRECTORY: str = ".data/chroma"
+
+class Config(BaseSettings):
+    """Main configuration class combining all settings."""
+    
+    # Vector store settings
+    vector_store: VectorStoreConfig = Field(default_factory=VectorStoreConfig)
+    
+    # Embedding settings
+    embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
+    
+    # Logging settings
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    
+    # Error handling
+    MAX_RETRIES: int = 3
+    RETRY_DELAY: float = 1.0  # seconds
+    
+    class Config:
+        """Pydantic config."""
+        env_prefix = "AI_RECRUITER_"
+        case_sensitive = True
+
+# Global config instance
+config = Config()
+
+def get_config() -> Config:
+    """Get the global configuration instance.
+    
+    Returns:
+        Config: Global configuration instance
+    """
+    return config
+
+def update_config(updates: Dict[str, Any]) -> None:
+    """Update configuration values.
+    
+    Args:
+        updates: Dictionary of configuration updates
+        
+    Example:
+        >>> update_config({"embedding": {"MODEL_NAME": "new-model"}})
+    """
+    global config
+    for key, value in updates.items():
+        if hasattr(config, key):
+            if isinstance(value, dict):
+                current = getattr(config, key)
+                for k, v in value.items():
+                    setattr(current, k, v)
+            else:
+                setattr(config, key, value)

@@ -2,7 +2,7 @@
 
 import pytest
 from typing import Dict
-from src.vector_store.chroma_store import ChromaStore
+from src.data.vector_store.chroma_store import ChromaStore
 
 @pytest.mark.asyncio
 class TestChromaStore:
