@@ -1,7 +1,27 @@
 import os
 import argparse
-from typing import List, Dict
+from typing import List, Dict, Tuple
 import json
+import tiktoken
+
+
+def count_tokens(text: str, model: str = "gpt-4") -> int:
+    """Count the number of tokens in a text string.
+    
+    Args:
+        text: The text to count tokens for
+        model: The model to use for counting (affects tokenizer)
+        
+    Returns:
+        Number of tokens
+    """
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except KeyError:
+        # Fall back to cl100k_base encoding if model not found
+        encoding = tiktoken.get_encoding("cl100k_base")
+    
+    return len(encoding.encode(text))
 
 
 def collect_file_contents(folder_paths: List[str], ignore_patterns: List[str] = None) -> Dict[str, str]:
@@ -62,24 +82,58 @@ def collect_file_contents(folder_paths: List[str], ignore_patterns: List[str] = 
     return result
 
 
-def format_for_chatgpt(contents: Dict[str, str]) -> str:
-    """Formats the collected contents for ChatGPT input.
+def format_for_chatgpt(contents: Dict[str, str]) -> Tuple[str, Dict[str, int]]:
+    """Formats the collected contents for ChatGPT input and counts tokens.
 
     Args:
         contents: Dict of file paths and their contents
 
     Returns:
-        Formatted string ready for ChatGPT
+        Tuple of (formatted string, dict with token counts for different models)
     """
     output = []
+    total_chars = 0
     
     # Sort files by name for consistent output
     for file_path in sorted(contents.keys()):
         content = contents[file_path]
         # Add file separator for clarity
-        output.append(f"\n{'='*80}\nFile: {file_path}\n{'='*80}\n```\n{content}\n```\n")
+        formatted = f"\n{'='*80}\nFile: {file_path}\n{'='*80}\n```\n{content}\n```\n"
+        output.append(formatted)
+        total_chars += len(formatted)
         
-    return "\n".join(output)
+    final_output = "\n".join(output)
+    
+    # Count tokens for different models
+    token_counts = {
+        "gpt-4": count_tokens(final_output, "gpt-4"),
+        "gpt-3.5-turbo": count_tokens(final_output, "gpt-3.5-turbo"),
+        "claude-2": count_tokens(final_output, "gpt-4"),  # Claude uses similar tokenization
+    }
+    
+    return final_output, token_counts
+
+
+def print_token_info(token_counts: Dict[str, int]) -> None:
+    """Print token count information and model compatibility."""
+    print("\nToken count information:")
+    print("-" * 40)
+    
+    # Model context limits
+    model_limits = {
+        "gpt-4": 8192,
+        "gpt-3.5-turbo": 4096,
+        "claude-2": 100000
+    }
+    
+    for model, count in token_counts.items():
+        limit = model_limits.get(model, 0)
+        print(f"{model}:")
+        print(f"  Tokens: {count:,}")
+        print(f"  Context limit: {limit:,}")
+        print(f"  Status: {'✅ Fits' if count <= limit else '❌ Too large'}")
+        print(f"  Usage: {count/limit*100:.1f}% of context window")
+        print()
 
 
 def main():
@@ -95,11 +149,13 @@ def main():
         ignore_patterns = args.ignore
         
     contents = collect_file_contents(args.folders, ignore_patterns)
-    formatted_output = format_for_chatgpt(contents)
+    formatted_output, token_counts = format_for_chatgpt(contents)
     
     with open(args.output, "w", encoding="utf-8") as f:
         f.write(formatted_output)
-    print(f"Output written to {args.output}")
+    print(f"\nOutput written to {args.output}")
+    
+    print_token_info(token_counts)
 
 
 if __name__ == "__main__":
