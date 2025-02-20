@@ -37,3 +37,4 @@ dataset/
 .chroma/
 chroma_db/
 .chroma_test/
+context.txt
