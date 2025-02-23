@@ -1,0 +1,13 @@
+---
+description: Default rule for the entire project, applying general constraints and references to all files.
+globs: **/*
+---
+
+# Your rule content
+
+- [architecture_and_tech_overview.md](mdc:docs/architecture_and_tech_overview.md)
+- [project_requirements_document.md](mdc:docs/project_requirements_document.md)
+- [implementation_plan.md](mdc:docs/implementation_plan.md)
+- You are an AI assistant working on an AI-driven candidate matcher project. Always reference design principles from the PRD, Tech Plan, and Architecture Overview to ensure consistency. Provide clear, maintainable code with docstrings when implementing new functions.
+- Do not provide code that includes hidden credentials (e.g., API keys) in plain text. Instead, use environment variables or secrets management as recommended in the Tech Plan (Section 3.3).
+- Follow a modular approach as described in the Architecture and Technical Overview, especially for retrieval and generation code. Keep embeddings, search, and LLM calls in separate modules.

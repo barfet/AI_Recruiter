@@ -1,0 +1,11 @@
+---
+description: Rules covering scripts in /scripts/data_prep or /data, focusing on embeddings, indexing, or batch ingestion logic.
+globs: scripts/data_prep/**/*.py, scripts/data_prep/**/*.sh, data/**/*.py
+---
+
+# Your rule content
+
+- [architecture_and_tech_overview.md](mdc:docs/architecture_and_tech_overview.md)
+- [project_requirements_document.md](mdc:docs/project_requirements_document.md)
+- When writing or modifying data ingestion scripts, make sure to adhere to the Phase 0 and Phase 1 instructions from the MVP PRD and Tech Plan (Section 1.1). Verify that the embedding model usage is consistent and that you handle updates or re-indexing carefully.
+- Avoid storing raw personal data in logs or code. Reference the Tech Plan (Section 3.3) for privacy and security guidelines. Use environment variables for any external credentials (e.g., Pinecone, S3).

@@ -1,0 +1,12 @@
+---
+description: Rules that apply specifically to Python files in the /backend directory. Reinforces code structure, module separation, and references best practices from the architecture docs.
+globs: backend/**/*.py
+---
+
+# Your rule content
+
+- [architecture_and_tech_overview.md](mdc:docs/architecture_and_tech_overview.md)
+- [implementation_plan.md](mdc:docs/implementation_plan.md)
+- All Python code in /backend should maintain a clear separation of concerns: retrieval logic, generation logic, agent logic, and data I/O must remain decoupled. Adhere to the structure recommended in the Tech Plan (Sections 1.2, 2, and 3).
+- Use docstrings (Google or NumPy style) for all new functions. Mention input parameters, return types, and quick usage notes, referencing the MVP PRD for usage context (e.g. job → candidate matching).
+- Ensure compliance with the serverless architecture plan: keep import overhead minimal and external connections (like Pinecone, OpenAI) at the global scope to reduce overhead in repeated function calls.

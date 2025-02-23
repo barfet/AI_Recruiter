@@ -1,0 +1,11 @@
+---
+description: Rules that apply to files or directories related to the multi-step AI agent design (Phase 3, from the Tech Plan).
+globs: backend/agents/**/*, backend/agent_*.py
+---
+
+# Your rule content
+
+- [architecture_and_tech_overview.md](mdc:docs/architecture_and_tech_overview.md)
+- [implementation_plan.md](mdc:docs/implementation_plan.md)
+- Whenever you add or edit code in the agent modules, ensure you incorporate memory handling for multi-turn interactions as described in the Tech Plan (Section 2) and Arch/Tech Overview (Interactive Agent Architecture).
+- Use a conversation-state approach (via local memory or DynamoDB), and confirm the agent can reference top candidates from previous steps for refinement queries or explanation generation. Avoid complex file I/O for memory—keep it ephemeral or DB-based as recommended.

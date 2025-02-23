@@ -1,0 +1,11 @@
+---
+description: Rules focusing on docstring/comment quality for any Python or TypeScript file.
+globs: **/*.py, **/*.ts
+---
+
+# Your rule content
+
+- [project_requirements_document.md](mdc:docs/project_requirements_document.md)
+- [architecture_and_tech_overview.md](mdc:docs/architecture_and_tech_overview.md)
+- Each function should include docstrings or JSDoc comments explaining what it does, expected input shape, and references to relevant sections of the MVP PRD if business logic is explained.
+- Keep comments consistent with the architecture references (e.g., mention the RAG pipeline if a function calls the LLM with candidate context).
